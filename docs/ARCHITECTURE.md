@@ -30,7 +30,7 @@ HTTPS: Caddy (:443) para compartir fuera de la LAN
 3. Caddy (caddy:latest): reverse proxy HTTPS local. Necesario para compartir con familiares fuera de la LAN.
 4. Pi-hole (pihole/pihole:latest): bloqueo de anuncios y trackers a nivel DNS.
 5. Unbound (mvance/unbound:latest): DNS recursivo, upstream de Pi-hole. Evita filtracion de consultas DNS a terceros.
-6. MediaFusion (mhdzumair/mediafusion:6.1.6): deportes en vivo. Requiere PostgreSQL + Redis + Prowlarr + TRAWL. Incluido en el compose.
+6. MediaFusion (mhdzumair/mediafusion:6.0.0): deportes en vivo. Requiere PostgreSQL + Redis + Prowlarr + TRAWL. Incluido en el compose.
 7. PostgreSQL (postgres:18-alpine): base de datos de MediaFusion.
 8. Redis (redis:latest): cache de MediaFusion.
 9. Prowlarr (ghcr.io/hotio/prowlarr:latest): gestor de indexers para MediaFusion.

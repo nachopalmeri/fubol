@@ -75,7 +75,7 @@ services:
       - NET_ADMIN
 
   mediafusion-api:
-    image: mhdzumair/mediafusion:6.1.6
+    image: mhdzumair/mediafusion:6.0.0
     container_name: mediafusion-api
     restart: unless-stopped
     ports:
@@ -103,7 +103,7 @@ services:
       - ./data/mediafusion:/app/data
 
   mediafusion-worker:
-    image: mhdzumair/mediafusion:6.1.6
+    image: mhdzumair/mediafusion:6.0.0
     container_name: mediafusion-worker
     restart: unless-stopped
     command: ["/usr/local/bin/mediafusion-worker"]
