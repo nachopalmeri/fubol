@@ -21,9 +21,17 @@ if [ ! -d /opt/media/fubol ]; then
 fi
 
 cd /opt/media/fubol 2>/dev/null || cd /vagrant
-docker compose up -d --build
+bash setup.sh 2>/dev/null || true
+docker compose up -d
+
+echo "Esperando a que los servicios esten listos..."
+sleep 30
+docker compose ps
 
 echo "=== Streaming stack started ==="
 echo "AIOStreams:         http://192.168.56.10:3000"
+echo "MediaFusion:        http://192.168.56.10:8000"
+echo "MediaFlow Proxy:    http://192.168.56.10:8888"
+echo "Prowlarr:           http://192.168.56.10:9696"
 echo "Pi-hole web:        http://192.168.56.10:8053/admin"
 echo "Caddy HTTPS:        https://192.168.56.10"

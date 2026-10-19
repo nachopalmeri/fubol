@@ -17,8 +17,13 @@ services:
       - NODE_ENV=production
     volumes:
       - ./data/aiostreams:/app/data
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
 
-  # ===== Proxy de streams (reduce latencia y evita bloqueos de IP) =====
   mediaflow-proxy:
     image: mhdzumair/mediaflow-proxy:latest
     container_name: mediaflow-proxy
@@ -34,6 +39,12 @@ services:
         condition: service_healthy
     volumes:
       - ./data/mediaflow:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8888/docs"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
 
   caddy:
     image: caddy:latest
@@ -46,6 +57,14 @@ services:
       - ./config/Caddyfile:/etc/caddy/Caddyfile
       - ./data/caddy:/data
       - ./data/caddy_config:/config
+    depends_on:
+      aiostreams:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "caddy", "validate", "--config", "/etc/caddy/Caddyfile"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
   unbound:
     image: mvance/unbound:latest
@@ -56,6 +75,11 @@ services:
     ports:
       - "5335:53/tcp"
       - "5335:53/udp"
+    healthcheck:
+      test: ["CMD", "drill", "google.com", "@127.0.0.1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
   pihole:
     image: pihole/pihole:latest
@@ -73,6 +97,15 @@ services:
       - ./data/dnsmasq:/etc/dnsmasq.d
     cap_add:
       - NET_ADMIN
+    depends_on:
+      unbound:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "dig", "+short", "google.com", "@127.0.0.1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
 
   mediafusion-api:
     image: mhdzumair/mediafusion:6.0.0
@@ -166,6 +199,12 @@ services:
       - TZ=${TZ:-America/Argentina/Buenos_Aires}
     volumes:
       - ./data/prowlarr:/config
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9696"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
 
   trawl:
     image: ghcr.io/germondai/trawl:latest

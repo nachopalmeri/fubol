@@ -74,9 +74,9 @@ Al terminar:
 ### Opcion B: Sin VM (Docker en el host)
 
 ```bash
-cp .env.example .env
-# editar .env: SECRET_KEY, BASE_URL, MEDIAFLOW_API_PASSWORD
-docker compose up -d
+bash setup.sh          # genera .env con secretos, crea directorios, valida
+# editar .env: BASE_URL con tu IP/dominio
+docker compose up -d   # levanta todo
 ```
 
 ---
