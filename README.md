@@ -257,6 +257,10 @@ docker compose pull && docker compose up -d
 tar czf backup-$(date +%F).tar.gz data/
 ```
 
+## Analisis tecnico detallado
+
+Ver `docs/COMO_FUNCIONAN.md` para un analisis profundo de como funcionan por detras los sitios de streaming deportivo gratuito (Futbol Libre, Pelota Libre, Rojadirecta, Angulismo): arquitectura, captura de senales, ofuscacion, anti-hotlinking, tokens expirables, y por que no pueden garantizar estabilidad.
+
 ## Legal
 
 Este stack es para uso personal. MediaFusion y listas M3U redirigen a streams de terceros. El uso es responsabilidad del usuario. MediaFlow Proxy es un proxy de streams, no modifica el contenido.
