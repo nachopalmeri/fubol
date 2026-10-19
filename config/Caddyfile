@@ -1,0 +1,9 @@
+# Reverse proxy local con HTTPS (certificados internos automaticos)
+:443 {
+    tls internal
+    reverse_proxy aiostreams:3000
+}
+
+http://:80 {
+    redir https://{host}{uri}
+}

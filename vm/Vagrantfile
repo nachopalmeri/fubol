@@ -1,0 +1,15 @@
+# -*- mode: ruby -*-
+Vagrant.configure("2") do |config|
+  config.vm.box = "ubuntu/jammy64"
+  config.vm.hostname = "streaming-vm"
+  config.vm.network "private_network", ip: "192.168.56.10"
+  [3000, 80, 443, 8053, 5335].each do |p|
+    config.vm.network "forwarded_port", guest: p, host: p
+  end
+  config.vm.provider "virtualbox" do |vb|
+    vb.name = "streaming-vm"
+    vb.memory = 8192
+    vb.cpus = 4
+  end
+  config.vm.provision "shell", path: "provision.sh"
+end

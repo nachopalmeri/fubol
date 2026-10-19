@@ -1,0 +1,186 @@
+version: "3.9"
+
+services:
+  aiostreams:
+    image: ghcr.io/viren070/aiostreams:latest
+    container_name: aiostreams
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    environment:
+      - PORT=3000
+      - BASE_URL=${BASE_URL:-http://localhost:3000}
+      - SECRET_KEY=${SECRET_KEY}
+      - DATABASE_URI=sqlite://./data/db.sqlite
+      - NODE_ENV=production
+    volumes:
+      - ./data/aiostreams:/app/data
+
+  # ===== Proxy de streams (reduce latencia y evita bloqueos de IP) =====
+  mediaflow-proxy:
+    image: mhdzumair/mediaflow-proxy:latest
+    container_name: mediaflow-proxy
+    restart: unless-stopped
+    ports:
+      - "8888:8888"
+    environment:
+      - API_PASSWORD=${MEDIAFLOW_API_PASSWORD:-changeme}
+      - PORT=8888
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./data/mediaflow:/app/data
+
+  caddy:
+    image: caddy:latest
+    container_name: caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./config/Caddyfile:/etc/caddy/Caddyfile
+      - ./data/caddy:/data
+      - ./data/caddy_config:/config
+
+  unbound:
+    image: mvance/unbound:latest
+    container_name: unbound
+    restart: unless-stopped
+    volumes:
+      - ./data/unbound:/opt/unbound/etc/unbound
+    ports:
+      - "5335:53/tcp"
+      - "5335:53/udp"
+
+  pihole:
+    image: pihole/pihole:latest
+    container_name: pihole
+    restart: unless-stopped
+    ports:
+      - "53:53/tcp"
+      - "53:53/udp"
+      - "8053:80/tcp"
+    environment:
+      TZ: ${TZ:-America/Argentina/Buenos_Aires}
+      WEBPASSWORD: ${PIHOLE_WEBPASSWORD:-changeme}
+    volumes:
+      - ./data/pihole:/etc/pihole
+      - ./data/dnsmasq:/etc/dnsmasq.d
+    cap_add:
+      - NET_ADMIN
+
+  mediafusion-api:
+    image: mhdzumair/mediafusion:6.1.6
+    container_name: mediafusion-api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      - POSTGRES_URI=postgresql://mediafusion:mediafusion@postgres:5432/mediafusion
+      - REDIS_URL=redis://redis:6379
+      - STREAM_RS_PORT=8000
+      - PROWLARR_URL=http://prowlarr:9696
+      - TRAWL_URL=http://trawl:8191
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    volumes:
+      - ./data/mediafusion:/app/data
+
+  mediafusion-worker:
+    image: mhdzumair/mediafusion:6.1.6
+    container_name: mediafusion-worker
+    restart: unless-stopped
+    command: ["/usr/local/bin/mediafusion-worker"]
+    env_file:
+      - .env
+    environment:
+      - POSTGRES_URI=postgresql://mediafusion:mediafusion@postgres:5432/mediafusion
+      - REDIS_URL=redis://redis:6379
+      - TRAWL_URL=http://trawl:8191
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      trawl:
+        condition: service_healthy
+    volumes:
+      - ./data/mediafusion:/app/data
+
+  postgres:
+    image: postgres:18-alpine
+    container_name: postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: mediafusion
+      POSTGRES_PASSWORD: mediafusion
+      POSTGRES_DB: mediafusion
+    volumes:
+      - ./data/postgres:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mediafusion -d mediafusion"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  redis:
+    image: redis:latest
+    container_name: redis
+    restart: unless-stopped
+    volumes:
+      - ./data/redis:/data
+    command: redis-server --appendonly yes --save 60 1 --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  prowlarr:
+    image: ghcr.io/hotio/prowlarr:latest
+    container_name: prowlarr
+    restart: unless-stopped
+    ports:
+      - "9696:9696"
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - UMASK=002
+      - TZ=${TZ:-America/Argentina/Buenos_Aires}
+    volumes:
+      - ./data/prowlarr:/config
+
+  trawl:
+    image: ghcr.io/germondai/trawl:latest
+    container_name: trawl
+    restart: unless-stopped
+    shm_size: 1gb
+    environment:
+      - REDIS_URL=redis://redis:6379/1
+      - BROWSER_POOL_SIZE=3
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8191/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
