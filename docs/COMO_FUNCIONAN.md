@@ -248,7 +248,47 @@ Si alguien quiere implementar un scraper (bajo su propia responsabilidad), el fl
 
 ---
 
-## 10. Conclusion para el usuario
+## 10. Estado actual del streaming deportivo gratuito (Octubre 2026)
+
+A partir de los reportes de usuarios (Twitter/X, Reddit, foros), el panorama actual es:
+
+### Sitios que siguen activos (con limitaciones)
+| Sitio | Estado | Notas |
+|---|---|---|
+| lacancha.tv | Activo | Mencionado por usuarios como alternativa estable. Sin verificacion de estabilidad en eventos masivos. |
+| fctv33 | Activo | Mencionado como opcion para futbol. Sin verificacion de estabilidad. |
+| PirloTV | Activo | Agregador clasico. Calidad variable, pop-ups agresivos. |
+| Elitegol | Activo (con advertencias) | Usuarios advierten NO entrar (posible malware/phishing). |
+| Sportzx | Activo | Requiere VPN segun usuarios. Posible malware. |
+| deporte libre | Activo | Mencionado como alternativa. Sin verificacion. |
+| RBTV+ | Activo | Mencionado por usuarios. Sin verificacion. |
+| Fawanews | Activo | Mencionado como "top". Sin verificacion. |
+| Tiroalpalo | Activo | Mencionado por usuarios. Sin verificacion. |
+| Jeinzmacias | Activo | Mencionado por usuarios. Sin verificacion. |
+| Cometa (app) | Activo (iOS) | App de App Store. Requiere busqueda manual. |
+| G Sports | Activo (Android TV) | App para Android TV. Calidad variable. |
+| Acestream | Activo (P2P) | Protocolo P2P. Requiere cliente Acestream. Latencia variable. |
+
+### Sitios bloqueados/descontinuados
+| Sitio | Estado |
+|---|---|
+| Pelota Libre (pelotalibre.la) | Bloqueado (2026) |
+| Futbol Libre (futbollibre.mx) | Bloqueado/descontinuado (2026) |
+| Rojadirecta (dominios .com/.org) | Bloqueado en multiples paises |
+| Al Angulo TV (alangulotv) | Creador arrestado (2025, Argentina) |
+| DaddyLiveHD | Bloqueado (ago 2026) |
+| Elitegol | Advertencia de malware por usuarios |
+
+### Conclusion
+TODOS los sitios gratuitos son agregadores con las mismas limitaciones:
+- Dependen de scrapers de terceros que pueden caerse.
+- Dominios rotan constantemente.
+- Publicidad maliciosa (phishing, malware).
+- No garantizan "cero caidas" ni baja latencia.
+
+La unica via que garantiza fiabilidad es **IPTV premium (Via B)** con servidores dedicados.
+
+## 11. Conclusion para el usuario
 
 - **Peliculas/series**: TorBox + AIOStreams es la solucion correcta. Estable, on-demand, sin descargas locales.
 - **Deportes en vivo**: No existe una solucion gratuita y estable. Las opciones son:
