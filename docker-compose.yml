@@ -1,126 +1,102 @@
-version: "3.9"
+# Streaming privado - Docker Compose (Etapa A: nucleo minimo, LAN, seguro)
+#
+# Perfiles:
+#   (sin perfil)  ->  nucleo: aiostreams + caddy
+#   sports        ->  MediaFusion + Postgres + Redis + Prowlarr + TRAWL + MediaFlow
+#   dns           ->  Unbound + Pi-hole (DNS de la LAN)
+#
+# Uso:
+#   bash setup.sh                            # obligatorio una vez (genera .env)
+#   docker compose up -d                     # nucleo
+#   docker compose --profile sports up -d    # nucleo + deportes
+#   docker compose --profile dns up -d       # nucleo + DNS
+#
+# Requiere .env con SERVER_HOST, SECRET_KEY y AIOSTREAMS_AUTH (los genera setup.sh).
+# No hay valores por defecto para secretos: si falta .env, compose falla a proposito.
+
+# Limites de logging para todos los servicios (evita llenar el disco).
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
 
 services:
+  # --------------------------------------------------------------------------
+  # Nucleo
+  # --------------------------------------------------------------------------
   aiostreams:
     image: ghcr.io/viren070/aiostreams:latest
     container_name: aiostreams
     restart: unless-stopped
+    logging: *default-logging
     ports:
+      # Panel y API. Protegido por AIOSTREAMS_AUTH (no queda abierto).
       - "3000:3000"
-    env_file:
-      - .env
     environment:
-      - PORT=3000
-      - BASE_URL=${BASE_URL:-http://localhost:3000}
-      - SECRET_KEY=${SECRET_KEY}
-      - DATABASE_URI=sqlite://./data/db.sqlite
-      - NODE_ENV=production
+      PORT: 3000
+      NODE_ENV: production
+      # URL publica: la que usan los clientes (Stremio/Nuvio) para pedir el manifest.
+      # Sale de SERVER_HOST (IP LAN o hostname). No hardcodear IPs.
+      BASE_URL: "https://${SERVER_HOST:?Falta SERVER_HOST en .env - corre bash setup.sh}"
+      SECRET_KEY: ${SECRET_KEY:?Falta SECRET_KEY en .env - corre bash setup.sh}
+      AIOSTREAMS_AUTH: ${AIOSTREAMS_AUTH:?Falta AIOSTREAMS_AUTH en .env - corre bash setup.sh}
+      # Exige login para /stremio/configure y activa el gate de escritura de
+      # configuraciones (CONFIG_ACCESS_KEY se genera y persiste solo).
+      AIOSTREAMS_AUTH_REQUIRED: "true"
+      # Los manifests de addons externos (p. ej. subtitulos) a veces tardan
+      # mas de 3 s; con el default se descartaban en silencio.
+      MANIFEST_TIMEOUT: "10000"
+      DATABASE_URI: sqlite://./data/db.sqlite
+      TZ: ${TZ:-America/Argentina/Buenos_Aires}
     volumes:
       - ./data/aiostreams:/app/data
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:3000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 20s
-
-  mediaflow-proxy:
-    image: mhdzumair/mediaflow-proxy:latest
-    container_name: mediaflow-proxy
-    restart: unless-stopped
-    ports:
-      - "8888:8888"
-    environment:
-      - API_PASSWORD=${MEDIAFLOW_API_PASSWORD:-changeme}
-      - PORT=8888
-      - REDIS_URL=redis://redis:6379
-    depends_on:
-      redis:
-        condition: service_healthy
-    volumes:
-      - ./data/mediaflow:/app/data
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8888/docs"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 20s
+    # healthcheck: se hereda de la imagen oficial
+    # (scripts/healthcheck.js -> GET http://localhost:3000/api/v1/status).
+    # No lo sobreescribas salvo que conozcas la ruta real; /health NO existe.
 
   caddy:
     image: caddy:latest
     container_name: caddy
     restart: unless-stopped
+    logging: *default-logging
     ports:
-      - "80:80"
-      - "443:443"
+      - "80:80" # redirige a HTTPS (automatico)
+      - "443:443" # panel y manifests por HTTPS (CA interna)
+      - "8443:8443" # MediaFusion (perfil sports) por HTTPS con la misma CA
+    environment:
+      # El Caddyfile usa {$SERVER_HOST} como sitio. Sin valor, Caddy degrada a
+      # un sitio catch-all sin certificado (bug OPS-02). Lo frenan dos barreras:
+      # esta interpolacion ${...:?} y el healthcheck (test -n "$SERVER_HOST").
+      SERVER_HOST: ${SERVER_HOST:?Falta SERVER_HOST en .env - corre bash setup.sh}
     volumes:
-      - ./config/Caddyfile:/etc/caddy/Caddyfile
+      - ./config/Caddyfile:/etc/caddy/Caddyfile:ro
       - ./data/caddy:/data
       - ./data/caddy_config:/config
+      - ./public/family:/srv/family:ro
     depends_on:
       aiostreams:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "caddy", "validate", "--config", "/etc/caddy/Caddyfile"]
+      # Valida la config y ademas exige SERVER_HOST no vacio: sin el, Caddy
+      # degrada a un sitio catch-all sin certificado (el bug OPS-02).
+      test: ["CMD-SHELL", "test -n \"$$SERVER_HOST\" && caddy validate --config /etc/caddy/Caddyfile"]
       interval: 30s
       timeout: 10s
       retries: 3
 
-  unbound:
-    image: mvance/unbound:latest
-    container_name: unbound
-    restart: unless-stopped
-    volumes:
-      - ./data/unbound:/opt/unbound/etc/unbound
-    ports:
-      - "5335:53/tcp"
-      - "5335:53/udp"
-    healthcheck:
-      test: ["CMD", "drill", "google.com", "@127.0.0.1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
-  pihole:
-    image: pihole/pihole:latest
-    container_name: pihole
-    restart: unless-stopped
-    ports:
-      - "53:53/tcp"
-      - "53:53/udp"
-      - "8053:80/tcp"
-    environment:
-      TZ: ${TZ:-America/Argentina/Buenos_Aires}
-      WEBPASSWORD: ${PIHOLE_WEBPASSWORD:-changeme}
-    volumes:
-      - ./data/pihole:/etc/pihole
-      - ./data/dnsmasq:/etc/dnsmasq.d
-    cap_add:
-      - NET_ADMIN
-    depends_on:
-      unbound:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "dig", "+short", "google.com", "@127.0.0.1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
-
+  # --------------------------------------------------------------------------
+  # Perfil "sports" (opcional; no bloquea el nucleo)
+  # --------------------------------------------------------------------------
   mediafusion-api:
+    profiles: ["sports"]
     image: mhdzumair/mediafusion:6.0.0
     container_name: mediafusion-api
     restart: unless-stopped
-    ports:
-      - "8000:8000"
+    logging: *default-logging
     env_file:
-      - .env
-    environment:
-      - POSTGRES_URI=postgresql://mediafusion:mediafusion@postgres:5432/mediafusion
-      - REDIS_URL=redis://redis:6379
-      - STREAM_RS_PORT=8000
-      - PROWLARR_URL=http://prowlarr:9696
-      - TRAWL_URL=http://trawl:8191
+      # Generado por setup.sh (secretos espejo de .env; .env no se filtra a este contenedor).
+      - ./config/mediafusion.env
     depends_on:
       postgres:
         condition: service_healthy
@@ -136,16 +112,14 @@ services:
       - ./data/mediafusion:/app/data
 
   mediafusion-worker:
+    profiles: ["sports"]
     image: mhdzumair/mediafusion:6.0.0
     container_name: mediafusion-worker
     restart: unless-stopped
+    logging: *default-logging
     command: ["/usr/local/bin/mediafusion-worker"]
     env_file:
-      - .env
-    environment:
-      - POSTGRES_URI=postgresql://mediafusion:mediafusion@postgres:5432/mediafusion
-      - REDIS_URL=redis://redis:6379
-      - TRAWL_URL=http://trawl:8191
+      - ./config/mediafusion.env
     depends_on:
       postgres:
         condition: service_healthy
@@ -157,12 +131,14 @@ services:
       - ./data/mediafusion:/app/data
 
   postgres:
+    profiles: ["sports"]
     image: postgres:18-alpine
     container_name: postgres
     restart: unless-stopped
+    logging: *default-logging
     environment:
       POSTGRES_USER: mediafusion
-      POSTGRES_PASSWORD: mediafusion
+      POSTGRES_PASSWORD: ${MEDIAFUSION_DB_PASSWORD:?Falta MEDIAFUSION_DB_PASSWORD en .env - corre bash setup.sh}
       POSTGRES_DB: mediafusion
     volumes:
       - ./data/postgres:/var/lib/postgresql
@@ -174,9 +150,11 @@ services:
       start_period: 30s
 
   redis:
+    profiles: ["sports"]
     image: redis:latest
     container_name: redis
     restart: unless-stopped
+    logging: *default-logging
     volumes:
       - ./data/redis:/data
     command: redis-server --appendonly yes --save 60 1 --maxmemory-policy allkeys-lru
@@ -187,11 +165,15 @@ services:
       retries: 5
 
   prowlarr:
+    profiles: ["sports"]
     image: ghcr.io/hotio/prowlarr:latest
     container_name: prowlarr
     restart: unless-stopped
+    logging: *default-logging
     ports:
-      - "9696:9696"
+      # Solo accesible desde el propio servidor (SSH local forward si lo necesitas
+      # desde otra maquina). Su UI no tiene auth hasta que la configures a mano.
+      - "127.0.0.1:9696:9696"
     environment:
       - PUID=1000
       - PGID=1000
@@ -207,9 +189,11 @@ services:
       start_period: 30s
 
   trawl:
+    profiles: ["sports"]
     image: ghcr.io/germondai/trawl:latest
     container_name: trawl
     restart: unless-stopped
+    logging: *default-logging
     shm_size: 1gb
     environment:
       - REDIS_URL=redis://redis:6379/1
@@ -223,3 +207,88 @@ services:
       timeout: 10s
       retries: 3
       start_period: 90s
+
+  mediaflow-proxy:
+    profiles: ["sports"]
+    image: mhdzumair/mediaflow-proxy:latest
+    container_name: mediaflow-proxy
+    restart: unless-stopped
+    logging: *default-logging
+    ports:
+      # Infraestructura interna (proxy de streams): solo local hasta la Etapa C.
+      - "127.0.0.1:8888:8888"
+    environment:
+      API_PASSWORD: ${MEDIAFLOW_API_PASSWORD:?Falta MEDIAFLOW_API_PASSWORD en .env - corre bash setup.sh}
+      PORT: 8888
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./data/mediaflow:/app/data
+    healthcheck:
+      # La imagen es Python y no incluye curl; usa urllib (OPS-11).
+      test:
+        ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8888/docs', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  # --------------------------------------------------------------------------
+  # Perfil "dns" (opcional; el nucleo funciona sin DNS propio)
+  # --------------------------------------------------------------------------
+  unbound:
+    profiles: ["dns"]
+    image: mvance/unbound:latest
+    container_name: unbound
+    restart: unless-stopped
+    logging: *default-logging
+    volumes:
+      # Solo archivos, NUNCA el directorio completo: la imagen genera su propio
+      # unbound.conf (que incluye estos 3 archivos) y necesita sus carpetas
+      # var/ y dev/. Montar el directorio vacio rompia el arranque (OPS-03).
+      - ./config/unbound/a-records.conf:/opt/unbound/etc/unbound/a-records.conf:ro
+      - ./config/unbound/srv-records.conf:/opt/unbound/etc/unbound/srv-records.conf:ro
+      - ./config/unbound/forward-records.conf:/opt/unbound/etc/unbound/forward-records.conf:ro
+    ports:
+      # Solo para depuracion desde el propio servidor; Pi-hole lo alcanza por
+      # la red interna de Docker como unbound#53.
+      - "127.0.0.1:5335:53/tcp"
+      - "127.0.0.1:5335:53/udp"
+    healthcheck:
+      test: ["CMD", "drill", "google.com", "@127.0.0.1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  pihole:
+    profiles: ["dns"]
+    image: pihole/pihole:latest
+    container_name: pihole
+    restart: unless-stopped
+    logging: *default-logging
+    ports:
+      - "53:53/tcp" # DNS para la LAN (requiere liberar el puerto 53 del host)
+      - "53:53/udp"
+      - "8053:80/tcp" # admin web (protegida por PIHOLE_WEBPASSWORD)
+    environment:
+      TZ: ${TZ:-America/Argentina/Buenos_Aires}
+      # Pi-hole v6: las claves se configuran con FTLCONF_ (SEC-03).
+      FTLCONF_webserver_api_password: ${PIHOLE_WEBPASSWORD:?Falta PIHOLE_WEBPASSWORD en .env - corre bash setup.sh}
+      FTLCONF_dns_listeningMode: ALL
+      FTLCONF_dns_upstreams: "unbound#53"
+    volumes:
+      - ./data/pihole:/etc/pihole
+      - ./data/dnsmasq:/etc/dnsmasq.d
+    cap_add:
+      - NET_ADMIN
+    depends_on:
+      unbound:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "dig", "+short", "google.com", "@127.0.0.1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s

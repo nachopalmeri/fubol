@@ -1,9 +1,49 @@
-# Reverse proxy local con HTTPS (certificados internos automaticos)
-:443 {
-    tls internal
-    reverse_proxy aiostreams:3000
+# Proxy HTTPS local para clientes (TV, PC, celular) con la CA interna de Caddy.
+#
+# SERVER_HOST = nombre o IP con el que TUS dispositivos llegan al servidor.
+#   Ejemplos: 192.168.1.50 (IP LAN del servidor) o streaming-vm.local
+#   Se define en .env (setup.sh lo detecta) y docker-compose lo pasa al contenedor.
+#
+# Sin SERVER_HOST el archivo no es valido a proposito: caddy validate falla antes
+# de arrancar (evita el bug OPS-02, donde ":443" + "tls internal" no emitia
+# ningun certificado y todo handshake terminaba en SEC_E_ILLEGAL_MESSAGE).
+#
+# La CA interna queda en ./data/caddy/pki/authorities/local/root.crt
+# Instalala en los dispositivos que deban confiar en el HTTPS (ver README).
+
+# Bootstrap only the public CA profile over HTTP; do not serve family tokens in cleartext.
+http://{$SERVER_HOST} {
+	handle /family-setup/Fubol-LAN-CA.mobileconfig {
+		uri strip_prefix /family-setup
+		root * /srv/family
+		header Content-Type application/x-apple-aspen-config
+		file_server
+	}
+	handle {
+		redir https://{host}{uri} permanent
+	}
 }
 
-http://:80 {
-    redir https://{host}{uri}
+https://{$SERVER_HOST} {
+	tls internal
+	encode zstd gzip
+	handle /family-setup/* {
+		@lan remote_ip private_ranges
+		handle @lan {
+			uri strip_prefix /family-setup
+			root * /srv/family
+			file_server
+		}
+		handle {
+			respond "Not found" 404
+		}
+	}
+	reverse_proxy aiostreams:3000
+}
+
+# MediaFusion (perfil "sports"): mismo host, mismo certificado, puerto 8443.
+# Si el perfil no esta activo, las peticiones a 8443 devuelven 502 (el resto sigue igual).
+https://{$SERVER_HOST}:8443 {
+	tls internal
+	reverse_proxy mediafusion-api:8000
 }

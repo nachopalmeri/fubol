@@ -198,8 +198,8 @@ Algunos proveedores usan Cloudflare para bloquear requests automaticos. Se neces
 
 **Opcion A - MediaFusion (self-hosted, pesado)**
 - Repo: https://github.com/mhdzumair/MediaFusion
-- Imagen: mhdzumair/mediafusion:6.1.6
-- Requiere: PostgreSQL, Redis, Prowlarr, TRAWL (mkcert para HTTPS).
+- Imagen: mhdzumair/mediafusion:6.0.0
+- Requiere: PostgreSQL, Redis, Prowlarr, TRAWL. HTTPS: Caddy con CA interna (este repo).
 - Fuentes: DaddyLiveHD (bloqueado 2026), SportVideo, y otros.
 - Veredicto: Funciona parcialmente. Inestable en eventos masivos. No garantiza cero caidas.
 
@@ -300,4 +300,3 @@ La unica via que garantiza fiabilidad es **IPTV premium (Via B)** con servidores
 - **HTTPS**: Caddy o Cloudflare Tunnel para compartir fuera de la LAN.
 
 El stack en este repositorio (docker-compose.yml) implementa la arquitectura correcta para VOD + privacidad. Para deportes, se documentan las opciones reales con sus limitaciones honestas.
-'@ | Set-Content docs/COMO_FUNCIONAN.md

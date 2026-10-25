@@ -1,54 +1,61 @@
 # Arquitectura
 
-## Flujo de datos
+## Flujo de datos (Etapa A)
 
 ```
-Cliente (Stremio / Nuvio)
+Cliente (Stremio / Nuvio / navegador)
         |
-        v  manifest URL del servidor (sin API key expuesta)
+        v  HTTPS en la LAN (Caddy, CA interna) + manifest URL por usuario (sin API key)
 AIOStreams (self-hosted, :3000)  -->  TorBox (debrid, plan pago)
         |  (API key de TorBox queda en el servidor, cifrada en SQLite)
         |
         v
-Streams directos (cached / uncached)  -->  MediaFlow Proxy (:8888)  -->  Reproductor final
-        |  (MediaFlow reduce latencia y evita bloqueos de IP)
+Streams directos (cached / uncached)  -->  Reproductor final
         +
 Subtitle Sync (cliente) --> OpenSubtitles / SubDL / SubSource (ES/EN, sincronizado)
         +
-Deportes: MediaFusion (incluido, :8000) con PostgreSQL + Redis + Prowlarr + TRAWL
+Deportes (perfil "sports"): MediaFusion (:8443 via Caddy) con PostgreSQL + Redis + Prowlarr + TRAWL
           o lista M3U IPTV premium (Via B)
         +
-Privacidad: Pi-hole (:53) + Unbound (:5335) (DNS recursivo, sin filtracion)
+Privacidad (perfil "dns"): Pi-hole (:53) + Unbound (upstream; reenvia a Cloudflare)
         +
-HTTPS: Caddy (:443) para compartir fuera de la LAN
+HTTPS: Caddy (:443 panel/manifests, :8443 MediaFusion) con CA interna
 ```
 
 ## Componentes
 
-1. AIOStreams (ghcr.io/viren070/aiostreams:latest): orquestador, proxy de comparticion y gestion de usuarios. Usa SQLite interno. Configuracion via /stremio/configure. Soporta TorBox como debrid.
-2. MediaFlow Proxy (mhdzumair/mediaflow-proxy:latest): proxy de streams. Reduce latencia y evita bloqueos de IP. Configurado en AIOStreams -> Proxy.
-3. Caddy (caddy:latest): reverse proxy HTTPS local. Necesario para compartir con familiares fuera de la LAN.
-4. Pi-hole (pihole/pihole:latest): bloqueo de anuncios y trackers a nivel DNS.
-5. Unbound (mvance/unbound:latest): DNS recursivo, upstream de Pi-hole. Evita filtracion de consultas DNS a terceros.
-6. MediaFusion (mhdzumair/mediafusion:6.0.0): deportes en vivo. Requiere PostgreSQL + Redis + Prowlarr + TRAWL. Incluido en el compose.
-7. PostgreSQL (postgres:18-alpine): base de datos de MediaFusion.
-8. Redis (redis:latest): cache de MediaFusion.
-9. Prowlarr (ghcr.io/hotio/prowlarr:latest): gestor de indexers para MediaFusion.
-10. TRAWL (ghcr.io/germondai/trawl:latest): bypass Cloudflare para indexers publicos.
-11. Subtitle Sync: addon de Stremio (client-side). No es un contenedor. Busca subtitulos ES/EN y sincroniza usando la pista del stream de TorBox.
-12. TorBox: servicio externo de debrid. API key configurada en AIOStreams.
+1. AIOStreams (ghcr.io/viren070/aiostreams:latest): orquestador, proxy de comparticion y gestion de usuarios (nucleo). Usa SQLite interno. Manifest por usuario: `/stremio/<uuid>/<password>/manifest.json`. Soporta TorBox como debrid.
+2. Caddy (caddy:latest): HTTPS en la LAN con CA interna (nucleo). Sitios: `https://SERVER_HOST` (AIOStreams) y `https://SERVER_HOST:8443` (MediaFusion, perfil sports).
+3. Pi-hole (pihole/pihole:latest): bloqueo de anuncios y trackers a nivel DNS (perfil `dns`).
+4. Unbound (mvance/unbound:latest): resolver upstream de Pi-hole via `unbound#53` (red interna de Docker). Reenvia a Cloudflare por defecto; para recursion pura ver `config/unbound/forward-records.conf` (perfil `dns`).
+5. MediaFusion (mhdzumair/mediafusion:6.0.0): deportes en vivo (perfil `sports`). Requiere PostgreSQL + Redis + Prowlarr + TRAWL.
+6. PostgreSQL (postgres:18-alpine): base de datos de MediaFusion (perfil `sports`).
+7. Redis (redis:latest): cache de MediaFusion/MediaFlow (perfil `sports`).
+8. Prowlarr (ghcr.io/hotio/prowlarr:latest): gestor de indexers (perfil `sports`, escucha solo en 127.0.0.1).
+9. TRAWL (ghcr.io/germondai/trawl:latest): bypass Cloudflare para indexers publicos (perfil `sports`).
+10. MediaFlow Proxy (mhdzumair/mediaflow-proxy:latest): proxy de streams (perfil `sports`, escucha solo en 127.0.0.1 en Etapa A).
+11. Subtitle Sync: addon de Stremio (client-side). No es un contenedor.
+12. TorBox: servicio externo de debrid. API key configurada en AIOStreams. Sin clave, AIOStreams
+    queda en modo P2P: devuelve `infoHash` (Torrentio/Comet/MediaFusion) para Stremio/Nuvio; no
+    hay URLs directas para AIOStreams Desktop.
+
+## Red y puertos (Etapa A)
+
+- La VM usa red bridged: toma una IP del router y es alcanzable por la TV y demas dispositivos.
+- `SERVER_HOST` (en `.env`) es la unica fuente de las URLs publicas: BASE_URL de AIOStreams y HOST_URL de MediaFusion se derivan de ahi.
+- Publicados en la LAN: 3000 (panel, con login), 80/443/8443 (Caddy). Con perfil dns: 53 y 8053.
+- Solo locales: Prowlarr (9696), MediaFlow (8888), Unbound (5335). Postgres/Redis/TRAWL no se publican.
 
 ## Seguridad
 
-- La API key de TorBox nunca sale del servidor. Los familiares reciben solo un manifest URL con token de usuario.
-- Todo el trafico de TorBox sale de una sola IP: la del servidor.
-- MediaFlow Proxy enruta streams para evitar bloqueos de IP y reducir latencia.
-- Caddy provee HTTPS para acceso remoto.
-- Pi-hole + Unbound evitan filtracion DNS.
-- Riesgo: compartir cuenta TorBox puede violar TOS. Mitigacion: una sola IP visible.
+- La API key de TorBox nunca sale del servidor. Los familiares reciben solo un manifest URL con uuid+password de su usuario.
+- La API key de TorBox vive en el servidor; los streams los sirve TorBox directo a cada dispositivo (TorBox permite multi-IP).
+- El panel de AIOStreams exige login (AIOSTREAMS_AUTH) incluso en la LAN.
+- `setup.sh` genera todos los secretos; no hay valores por defecto.
+- Caddy provee HTTPS en la LAN con CA interna (instalable en los dispositivos).
+- Riesgo: abuso de ancho de banda (descargas excesivas). TorBox permite compartir cuenta/API key; mitigacion: uso razonable y no publicar la key.
 - Riesgo: MediaFusion (Via A) usa scrapers de terceros que pueden ser inestables o tener problemas legales. Via B (IPTV pago) es mas estable pero depende del proveedor.
 
 ## Limitaciones del proxy
 
 MediaFlow Proxy reduce latencia y evita bloqueos de IP, pero NO puede arreglar una fuente que se cae. Si MediaFusion (Via A) deja de funcionar, el proxy no lo resuelve.
-'@ | Set-Content docs/ARCHITECTURE.md

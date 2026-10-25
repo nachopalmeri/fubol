@@ -1,5 +1,10 @@
 node_modules/
 *.log
 .env
+.env.bak.*
 data/
-'@ | Set-Content .gitignore
+config/mediafusion.env
+.secrets/*
+!.secrets/README.md
+public/family/*
+.playwright-mcp/

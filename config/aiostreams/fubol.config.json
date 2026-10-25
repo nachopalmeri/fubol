@@ -1,0 +1,498 @@
+{
+  "addonName": "Fubol",
+  "addonDescription": "Centro multimedia familiar: peliculas, series y deportes en vivo.",
+  "catalogModifications": [
+    {
+      "id": "sports-streamse3b0.sports_football",
+      "type": "sport",
+      "enabled": true,
+      "name": "Fútbol"
+    },
+    {
+      "id": "sports-streamse3b0.sports_live",
+      "type": "sport",
+      "enabled": true,
+      "name": "En vivo internacional"
+    },
+    {
+      "id": "sports-streamse3b0.sports_today",
+      "type": "sport",
+      "enabled": true,
+      "name": "Hoy"
+    },
+    {
+      "id": "sports-streamse3b0.sports_basketball",
+      "type": "sport",
+      "enabled": true,
+      "name": "Básquet"
+    },
+    {
+      "id": "sports-streamse3b0.sports_motor_sports",
+      "type": "sport",
+      "enabled": true,
+      "name": "Motor"
+    },
+    {
+      "id": "sports-streamse3b0.sports_fight",
+      "type": "sport",
+      "enabled": true,
+      "name": "Peleas"
+    },
+    {
+      "id": "sports-streamse3b0.sports_tennis",
+      "type": "sport",
+      "enabled": true,
+      "name": "Tenis"
+    },
+    {
+      "id": "cinemetae3b0.top",
+      "type": "movie",
+      "enabled": true,
+      "name": "Películas"
+    },
+    {
+      "id": "cinemetae3b0.top",
+      "type": "series",
+      "enabled": true,
+      "name": "Series"
+    },
+    {
+      "id": "cinemetae3b0.year",
+      "type": "movie",
+      "enabled": true,
+      "name": "Películas nuevas"
+    },
+    {
+      "id": "cinemetae3b0.year",
+      "type": "series",
+      "enabled": true,
+      "name": "Series nuevas"
+    },
+    {
+      "id": "cinemetae3b0.imdbRating",
+      "type": "movie",
+      "enabled": true,
+      "name": "Películas destacadas"
+    },
+    {
+      "id": "cinemetae3b0.imdbRating",
+      "type": "series",
+      "enabled": true,
+      "name": "Series destacadas"
+    },
+    {
+      "id": "sports-streamse3b0.sports_american_football",
+      "type": "sport",
+      "enabled": false
+    },
+    {
+      "id": "sports-streamse3b0.sports_hockey",
+      "type": "sport",
+      "enabled": false
+    },
+    {
+      "id": "sports-streamse3b0.sports_baseball",
+      "type": "sport",
+      "enabled": false
+    },
+    {
+      "id": "sports-streamse3b0.sports_rugby",
+      "type": "sport",
+      "enabled": false
+    },
+    {
+      "id": "sports-streamse3b0.sports_golf",
+      "type": "sport",
+      "enabled": false
+    },
+    {
+      "id": "sports-streamse3b0.sports_billiards",
+      "type": "sport",
+      "enabled": false
+    },
+    {
+      "id": "sports-streamse3b0.sports_afl",
+      "type": "sport",
+      "enabled": false
+    },
+    {
+      "id": "sports-streamse3b0.sports_darts",
+      "type": "sport",
+      "enabled": false
+    },
+    {
+      "id": "sports-streamse3b0.sports_cricket",
+      "type": "sport",
+      "enabled": false
+    },
+    {
+      "id": "sports-streamse3b0.sports_other",
+      "type": "sport",
+      "enabled": false
+    },
+    {
+      "id": "cinemetae3b0.last-videos",
+      "type": "series",
+      "enabled": false
+    },
+    {
+      "id": "cinemetae3b0.calendar-videos",
+      "type": "series",
+      "enabled": false
+    }
+  ],
+  "presets": [
+    {
+      "type": "torrentio",
+      "instanceId": "torrentio",
+      "enabled": true,
+      "options": {
+        "name": "Torrentio",
+        "timeout": 7000,
+        "resources": [
+          "stream"
+        ],
+        "providers": [],
+        "useMultipleInstances": false
+      }
+    },
+    {
+      "type": "comet",
+      "instanceId": "comet",
+      "enabled": true,
+      "options": {
+        "name": "Comet",
+        "timeout": 8000,
+        "resources": [
+          "stream"
+        ],
+        "includeP2P": false,
+        "removeTrash": true,
+        "mediaTypes": []
+      }
+    },
+    {
+      "type": "stremthruTorz",
+      "instanceId": "stremthru-torz",
+      "enabled": true,
+      "options": {
+        "name": "StremThru Torz",
+        "timeout": 8000,
+        "resources": [
+          "stream"
+        ],
+        "mediaTypes": [],
+        "includeP2P": false,
+        "useMultipleInstances": false
+      }
+    },
+    {
+      "type": "knaben",
+      "instanceId": "knaben",
+      "enabled": true,
+      "options": {
+        "name": "Knaben",
+        "timeout": 8000,
+        "mediaTypes": [],
+        "useMultipleInstances": false
+      }
+    },
+    {
+      "type": "mediafusion",
+      "instanceId": "mediafusion",
+      "enabled": true,
+      "options": {
+        "name": "MediaFusion",
+        "timeout": 9000,
+        "resources": [
+          "stream"
+        ],
+        "useCachedResultsOnly": true,
+        "enableWatchlistCatalogs": false,
+        "downloadViaBrowser": false,
+        "contributorStreams": false,
+        "certificationLevelsFilter": [],
+        "nudityFilter": [],
+        "mediaTypes": []
+      }
+    },
+    {
+      "type": "animetosho",
+      "instanceId": "animetosho",
+      "enabled": true,
+      "options": {
+        "name": "AnimeTosho",
+        "timeout": 8000,
+        "mediaTypes": [
+          "anime"
+        ],
+        "useMultipleInstances": false
+      }
+    },
+    {
+      "type": "opensubtitles-v3-plus",
+      "instanceId": "opensubtitles",
+      "enabled": true,
+      "options": {
+        "name": "OpenSubtitles ES/EN",
+        "timeout": 8000,
+        "resources": [
+          "subtitles"
+        ],
+        "language": [
+          "en",
+          "es",
+          "sp",
+          "ea"
+        ],
+        "sources": "all",
+        "includeAiTranslated": true,
+        "movieHashPlusAutoAdjustment": true
+      }
+    },
+    {
+      "type": "custom",
+      "instanceId": "cinemeta",
+      "enabled": true,
+      "options": {
+        "name": "Cinemeta",
+        "manifestUrl": "https://v3-cinemeta.strem.io/manifest.json",
+        "timeout": 10000,
+        "resources": [
+          "catalog",
+          "meta"
+        ],
+        "mediaTypes": []
+      }
+    },
+    {
+      "type": "custom",
+      "instanceId": "sports-streams",
+      "enabled": true,
+      "options": {
+        "name": "Sports Streams",
+        "manifestUrl": "https://sports.highfly.dev/eyJoaWRlVGlwIjp0cnVlfQ/manifest.json",
+        "timeout": 10000,
+        "resources": [
+          "catalog",
+          "meta",
+          "stream"
+        ],
+        "mediaTypes": []
+      }
+    }
+  ],
+  "services": [
+    {
+      "id": "torbox",
+      "enabled": true,
+      "credentials": {
+        "apiKey": "PENDING_TORBOX_KEY"
+      }
+    }
+  ],
+  "formatter": {
+    "id": "prism"
+  },
+  "preferredQualities": [
+    "BluRay REMUX",
+    "BluRay",
+    "WEB-DL",
+    "WEBRip",
+    "HDRip",
+    "HDTV",
+    "Unknown"
+  ],
+  "excludedQualities": [
+    "CAM",
+    "SCR",
+    "TS",
+    "TC",
+    "DVD REMUX",
+    "DVDRip"
+  ],
+  "preferredResolutions": [
+    "1080p",
+    "720p",
+    "576p",
+    "480p",
+    "360p",
+    "Unknown"
+  ],
+  "excludedResolutions": [
+    "2160p",
+    "1440p"
+  ],
+  "includedResolutions": [],
+  "requiredResolutions": [],
+  "includedQualities": [],
+  "requiredQualities": [],
+  "excludedVisualTags": [
+    "3D"
+  ],
+  "excludedKeywords": [
+    "Web Link",
+    "Scrape Summary",
+    "Channels May Be Down",
+    "If Streams Are Not Working",
+    "Streams Temporarily Unavailable",
+    "Match Not Found Or Has Ended",
+    "Try Again Shortly",
+    "Use an external player",
+    "Tip: Use an external player",
+    "If streams are not working",
+    "try using an external player",
+    "You can disable this tip"
+  ],
+  "excludedStreamTypes": [
+    "info"
+  ],
+  "excludedAudioTags": [
+    "DTS",
+    "DTS-ES",
+    "DTS-HD",
+    "DTS-HD MA",
+    "DTS:X",
+    "TrueHD",
+    "PCM",
+    "FLAC"
+  ],
+  "preferredAudioTags": [
+    "AAC",
+    "OPUS",
+    "DD+",
+    "DD"
+  ],
+  "excludedEncodes": [
+    "AV1",
+    "VC-1",
+    "XviD",
+    "DivX",
+    "MPEG-4"
+  ],
+  "preferredEncodes": [
+    "AVC",
+    "HEVC"
+  ],
+  "sortCriteria": {
+    "global": [
+      {
+        "key": "cached",
+        "direction": "desc"
+      },
+      {
+        "key": "resolution",
+        "direction": "desc"
+      },
+      {
+        "key": "library",
+        "direction": "desc"
+      },
+      {
+        "key": "streamType",
+        "direction": "desc"
+      },
+      {
+        "key": "audioTag",
+        "direction": "desc"
+      },
+      {
+        "key": "audioChannel",
+        "direction": "desc"
+      },
+      {
+        "key": "encode",
+        "direction": "desc"
+      },
+      {
+        "key": "language",
+        "direction": "desc"
+      },
+      {
+        "key": "size",
+        "direction": "desc"
+      }
+    ]
+  },
+  "deduplicator": {
+    "enabled": true,
+    "multiGroupBehaviour": "aggressive",
+    "keys": [
+      "filename",
+      "infoHash"
+    ],
+    "cached": "single_result",
+    "uncached": "per_service",
+    "p2p": "single_result"
+  },
+  "serviceWrap": {
+    "enabled": true,
+    "presets": [
+      "knaben"
+    ],
+    "services": [
+      "torbox"
+    ]
+  },
+  "digitalReleaseFilter": {
+    "enabled": false
+  },
+  "statistics": {
+    "enabled": false,
+    "statsToShow": [],
+    "showFilterStatsOnNoStreams": false
+  },
+  "yearMatching": {
+    "enabled": false,
+    "tolerance": 1,
+    "requestTypes": [
+      "movie",
+      "series"
+    ],
+    "addons": []
+  },
+  "titleMatching": {
+    "enabled": false,
+    "similarityThreshold": 0.8,
+    "ambiguousResults": "keep",
+    "requestTypes": [
+      "movie",
+      "series"
+    ],
+    "addons": []
+  },
+  "seasonEpisodeMatching": {
+    "enabled": true,
+    "strict": true,
+    "requestTypes": [
+      "movie",
+      "series"
+    ],
+    "addons": []
+  },
+  "autoPlay": {
+    "enabled": true,
+    "attributes": [
+      "service",
+      "proxied",
+      "resolution",
+      "quality",
+      "encode",
+      "audioTags",
+      "visualTags",
+      "languages",
+      "releaseGroup"
+    ]
+  },
+  "cacheAndPlay": {
+    "enabled": true,
+    "streamTypes": [
+      "usenet"
+    ]
+  },
+  "proxy": {
+    "proxiedAddons": [],
+    "proxiedServices": [],
+    "id": "builtin"
+  }
+}

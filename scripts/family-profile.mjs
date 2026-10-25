@@ -1,0 +1,186 @@
+#!/usr/bin/env node
+/** Create/update a separate, server-side Fubol manifest for family devices.
+ * Secrets are stored only in .secrets/family-user.env and never printed.
+ */
+import fs from 'node:fs';
+import path from 'node:path';
+import crypto from 'node:crypto';
+import { applyTorboxMode } from './lib/torbox-mode.mjs';
+
+const root = path.resolve(import.meta.dirname, '..');
+const envPath = path.join(root, '.env');
+const templatePath = path.join(root, 'config', 'aiostreams', 'fubol.config.json');
+const secrets = path.join(root, '.secrets');
+const keyPath = path.join(secrets, 'torbox.key');
+const profilePath = path.join(secrets, 'family-user.env');
+const api = 'http://127.0.0.1:3000';
+
+function parseEnv(file) {
+  const values = {};
+  if (!fs.existsSync(file)) return values;
+  for (const raw of fs.readFileSync(file, 'utf8').split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line || line.startsWith('#')) continue;
+    const eq = line.indexOf('=');
+    if (eq < 1) continue;
+    let value = line.slice(eq + 1).trim();
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) value = value.slice(1, -1);
+    values[line.slice(0, eq).trim()] = value;
+  }
+  return values;
+}
+
+function die(message) {
+  console.error(`ERROR: ${message}`);
+  process.exit(1);
+}
+
+function basic(uuid, password) {
+  return `Basic ${Buffer.from(`${uuid}:${password}`).toString('base64')}`;
+}
+
+async function json(response) {
+  const text = await response.text();
+  try { return text ? JSON.parse(text) : null; } catch { return null; }
+}
+
+function sessionCookie(response) {
+  const values = typeof response.headers.getSetCookie === 'function'
+    ? response.headers.getSetCookie()
+    : [response.headers.get('set-cookie')].filter(Boolean);
+  for (const value of values) {
+    const match = /(?:^|,\s*)(aiostreams\.session=[^;]+)/.exec(value);
+    if (match) return match[1];
+  }
+  return null;
+}
+
+async function main() {
+  const rootEnv = parseEnv(envPath);
+  const auth = rootEnv.AIOSTREAMS_AUTH || '';
+  const serverHost = (rootEnv.SERVER_HOST || '').replace(/^https?:\/\//, '').replace(/\/+$/, '');
+  if (!auth.includes(':') || !serverHost) die('missing AIOSTREAMS_AUTH or SERVER_HOST in .env');
+
+  let config;
+  try { config = JSON.parse(fs.readFileSync(templatePath, 'utf8')); }
+  catch { die('invalid or missing AIOStreams template'); }
+  const key = fs.existsSync(keyPath) ? fs.readFileSync(keyPath, 'utf8').trim() : '';
+  try {
+    applyTorboxMode(config, key);
+  } catch (error) {
+    die(error.message);
+  }
+
+  const colon = auth.indexOf(':');
+  const loginResponse = await fetch(`${api}/api/v1/auth/login`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ username: auth.slice(0, colon), password: auth.slice(colon + 1) }),
+  });
+  const loginBody = await json(loginResponse);
+  if (loginResponse.status !== 200) die(`AIOStreams login failed (HTTP ${loginResponse.status}, ${loginBody?.error?.code || 'no code'})`);
+  const cookie = sessionCookie(loginResponse);
+  if (!cookie) die('AIOStreams login returned no session cookie');
+
+  const saved = parseEnv(profilePath);
+  let uuid = saved.FAMILY_AIOSTREAMS_UUID || '';
+  let password = saved.FAMILY_AIOSTREAMS_PASSWORD || '';
+  let encrypted = saved.FAMILY_AIOSTREAMS_ENCRYPTED_PASSWORD || '';
+  let action;
+  if (uuid && password) {
+    const checkResponse = await fetch(`${api}/api/v1/user`, { headers: { authorization: basic(uuid, password) } });
+    const checkBody = await json(checkResponse);
+    if (checkResponse.status !== 200) die(`saved family user unavailable (HTTP ${checkResponse.status})`);
+    encrypted = checkBody?.data?.encryptedPassword || encrypted;
+    const update = await fetch(`${api}/api/v1/user`, {
+      method: 'PUT',
+      headers: { authorization: basic(uuid, password), cookie, 'content-type': 'application/json' },
+      body: JSON.stringify({ config }),
+    });
+    if (update.status !== 200) die(`family profile update failed (HTTP ${update.status})`);
+    action = 'updated';
+  } else {
+    password = crypto.randomBytes(32).toString('hex');
+    const create = await fetch(`${api}/api/v1/user`, {
+      method: 'POST',
+      headers: { cookie, 'content-type': 'application/json' },
+      body: JSON.stringify({ config, password }),
+    });
+    const body = await json(create);
+    if (create.status !== 201) die(`family profile creation failed (HTTP ${create.status}, ${body?.error?.code || 'no code'})`);
+    uuid = body?.data?.uuid || '';
+    encrypted = body?.data?.encryptedPassword || '';
+    if (!uuid || !encrypted) die('family profile response was incomplete');
+    action = 'created';
+  }
+
+  const local = `http://127.0.0.1:3000/stremio/${uuid}/${encrypted}/manifest.json`;
+  const publicUrl = `https://${serverHost}/stremio/${uuid}/${encrypted}/manifest.json`;
+  fs.mkdirSync(secrets, { recursive: true });
+  const content = [
+    '# Generated by scripts/family-profile.mjs. Keep private; do not commit or send in chat.',
+    `FAMILY_AIOSTREAMS_UUID=${uuid}`,
+    `FAMILY_AIOSTREAMS_PASSWORD=${password}`,
+    `FAMILY_AIOSTREAMS_ENCRYPTED_PASSWORD=${encrypted}`,
+    `FAMILY_MANIFEST_URL=${publicUrl}`,
+    `FAMILY_MANIFEST_URL_LOCAL=${local}`,
+    '',
+  ].join('\n');
+  fs.writeFileSync(profilePath, content, { encoding: 'utf8', mode: 0o600 });
+  if (process.platform === 'win32') {
+    const { execFileSync } = await import('node:child_process');
+    execFileSync('icacls', [profilePath, '/inheritance:r', '/grant:r', `${process.env.USERNAME}:(F)`], { stdio: 'ignore' });
+  }
+
+  // The setup page contains the family manifest token. It is ignored by Git and Caddy serves it
+  // only over HTTPS to private IP ranges. HTTP is reserved for the public CA profile bootstrap.
+  const publicDir = path.join(root, 'public', 'family');
+  fs.mkdirSync(publicDir, { recursive: true });
+  const escapeHtml = (value) => value.replace(/[&<>"']/g, (ch) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  })[ch]);
+  const safeManifest = escapeHtml(publicUrl);
+  const vodNote = key
+    ? 'El fútbol y VOD solo funcionan si hay fuentes disponibles. Safari no abre MKV de forma nativa; la reproducción externa debe probarse en el teléfono.'
+    : 'El fútbol y VOD solo funcionan si hay fuentes disponibles. Sin TorBox, las películas y series se ven en Stremio/Nuvio por P2P; para VOD en la app de escritorio hace falta TorBox. Safari no abre MKV de forma nativa; la reproducción externa debe probarse en el teléfono.';
+  const setupPage = `<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#101820"><title>Fubol familiar</title>
+<style>
+:root{color-scheme:dark;font:16px system-ui,sans-serif;background:#101820;color:#f4f6f7}body{max-width:620px;margin:0 auto;padding:28px 18px;line-height:1.55}h1{font-size:2rem;margin:.2em 0}p,li{color:#c6d0d7}a,button{display:block;width:100%;box-sizing:border-box;margin:12px 0;padding:15px 16px;border:0;border-radius:12px;background:#b7f36b;color:#101820;font:600 1rem system-ui;text-align:center;text-decoration:none}button{cursor:pointer}small{color:#9baab4}.note{border-left:3px solid #b7f36b;padding-left:12px}
+</style></head><body><main><h1>Fubol para la familia</h1>
+<p>Configuración inicial del iPhone, dentro del Wi-Fi de casa.</p>
+<a href="http://${escapeHtml(serverHost)}/family-setup/Fubol-LAN-CA.mobileconfig">1. Instalar certificado de la red</a>
+<p>Después de instalarlo, activar confianza completa en Ajustes → General → Información → Ajustes de confianza de certificados.</p>
+<button id="copy" type="button">2. Copiar acceso de Fubol</button>
+<p>En Stremio Web: Ajustes → Add-ons → pegar el acceso copiado e instalarlo. En iPhone, usar Safari y agregar Stremio Web a Inicio.</p>
+<a href="https://web.stremio.com/">Abrir Stremio Web</a>
+<p>En Stremio Web → Ajustes → “Play in external player”, seleccionar VLC u Outplayer. Instalar ese reproductor desde App Store.</p>
+<a href="https://www.lpfplay.com/">Fútbol oficial de AFA — LPF Play</a>
+<p>LPF Play es una fuente oficial para las competencias que publique en su agenda; revisar allí qué partido está disponible.</p>
+<p class="note">${vodNote}</p>
+<small>Este acceso es privado para la familia. No reenviarlo fuera de casa.</small>
+<script>const manifest="${safeManifest}";document.getElementById('copy').addEventListener('click',async()=>{try{await navigator.clipboard.writeText(manifest);document.getElementById('copy').textContent='Acceso copiado'}catch{prompt('Copiá este acceso de Fubol:',manifest)}});</script>
+</main></body></html>`;
+  const setupPath = path.join(publicDir, 'index.html');
+  fs.writeFileSync(setupPath, setupPage, { encoding: 'utf8', mode: 0o600 });
+  if (process.platform === 'win32') {
+    const { execFileSync } = await import('node:child_process');
+    const account = `${process.env.USERDOMAIN}\\${process.env.USERNAME}`;
+    execFileSync('icacls', [setupPath, '/inheritance:r', '/grant:r', `${account}:(F)`, '*S-1-5-18:(F)', '*S-1-5-32-544:(F)'], { stdio: 'ignore' });
+  }
+
+  const manifestResponse = await fetch(local, { headers: { accept: 'application/json' } });
+  const manifest = await json(manifestResponse);
+  if (manifestResponse.status !== 200 || !manifest) die(`family manifest check failed (HTTP ${manifestResponse.status})`);
+  console.log(`family_profile=${action}`);
+  console.log(`manifest_http=${manifestResponse.status}`);
+  console.log(`manifest_catalogs=${(manifest.catalogs || []).length}`);
+  console.log(`torbox_key=${key ? 'present' : 'pending'}`);
+  console.log('credentials_saved=private');
+}
+
+main().catch((error) => {
+  console.error(`ERROR: ${error.name || 'Error'} during family profile operation`);
+  process.exit(1);
+});

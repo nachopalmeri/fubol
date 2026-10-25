@@ -1,15 +1,40 @@
 # -*- mode: ruby -*-
+# VM Ubuntu para el stack (Etapa A).
+#
+# El synced_folder monta la RAIZ del repo (un nivel arriba de este archivo) en
+# /vagrant, para que `docker compose` encuentre docker-compose.yml (OPS-01).
+#
+# Red: bridged (public_network) para que la VM tome una IP del router y sea
+# alcanzable por la TV y demas dispositivos de la LAN (ARCH-01).
+# `vagrant up` va a preguntar que interfaz del host puentear: elegi tu
+# Wi-Fi/Ethernet activa.
+#
+# Fallback si no podes usar red bridged: ver comentario al final del archivo.
 Vagrant.configure("2") do |config|
   config.vm.box = "ubuntu/jammy64"
   config.vm.hostname = "streaming-vm"
-  config.vm.network "private_network", ip: "192.168.56.10"
-  [3000, 8000, 8888, 9696, 80, 443, 8053, 5335].each do |p|
-    config.vm.network "forwarded_port", guest: p, host: p
-  end
+
+  config.vm.synced_folder "..", "/vagrant"
+
+  config.vm.network "public_network"
+
   config.vm.provider "virtualbox" do |vb|
     vb.name = "streaming-vm"
     vb.memory = 8192
     vb.cpus = 4
   end
+
   config.vm.provision "shell", path: "provision.sh"
 end
+
+# --- Fallback sin red bridged (host-only + forwarded ports) ------------------
+# Si tu red no permite bridged, comenta la linea public_network de arriba y
+# descomenta esto:
+#
+#   config.vm.network "private_network", ip: "192.168.56.10"
+#   [3000, 80, 443, 8443, 8053].each do |p|
+#     config.vm.network "forwarded_port", guest: p, host: p
+#   end
+#
+# En ese caso, en .env pone SERVER_HOST con la IP LAN DEL HOST (no
+# 192.168.56.10): es la unica direccion que ven la TV y los demas dispositivos.
