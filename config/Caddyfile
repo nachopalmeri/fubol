@@ -10,6 +10,12 @@
 #
 # La CA interna queda en ./data/caddy/pki/authorities/local/root.crt
 # Instalala en los dispositivos que deban confiar en el HTTPS (ver README).
+{
+	# Los clientes que entran por IP no mandan SNI. Sin esto, Caddy busca un
+	# certificado para la IP interna del contenedor y el handshake falla con
+	# "no certificate available". default_sni fuerza el identificador correcto.
+	default_sni {$SERVER_HOST}
+}
 
 # Bootstrap only the public CA profile over HTTP; do not serve family tokens in cleartext.
 http://{$SERVER_HOST} {

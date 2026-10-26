@@ -1,6 +1,6 @@
 # Fubol — estado de ejecución
 
-Actualizado: 2026-10-24
+Actualizado: 2026-10-26
 
 ## F0 — Runtime y baseline
 - [x] Verificar virtualización (SVM/SLAT: OK)
@@ -101,6 +101,10 @@ Actualizado: 2026-10-24
 - “Cero delay” no se puede garantizar con HLS gratuito: el origen medido está ~25-35 s detrás y el player suma ~12 s (~35-45 s total). Si el origen es un re-stream de TV puede estar más atrasado. En esta casa no hay cable; la antena debe confirmarse en la TV. Si no está conectada o el partido no sale en TV abierta, internet mantiene delay.
 - La TV Samsung UN32J4290 (Tizen 2.3) no puede instalar AIOStreams/Stremio; usar la PC por HDMI o autorizar un stick.
 - El iPhone necesita confiar la CA local; MKV no es nativo en Safari y aún falta una prueba real de reproducción.
+
+## Hecho 2026-10-26 (HTTPS LAN)
+- HTTPS por IP arreglado: `default_sni {$SERVER_HOST}` en el bloque global del `Caddyfile`. Caddy 2.11.7 no caia al certificado por defecto cuando el cliente no mandaba SNI; buscaba la IP interna del contenedor y devolvia `no certificate available`.
+- Verificado: `https://192.168.0.122/addons/` -> 200 con 17 tarjetas; `https://192.168.0.122/` -> 200; `caddy validate` -> `Valid configuration`.
 
 ## Hecho 2026-10-24 (noche, addons)
 - Catálogo curado `config/addons/catalog.json` con 17 addons oficiales/open source/configurables, licencia, riesgo y nota; separa P2P de vivo oficial.

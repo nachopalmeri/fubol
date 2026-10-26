@@ -18,6 +18,17 @@ node scripts/addons.mjs json     # imprime el catalogo
 
 El catalogo vive en `config/addons/catalog.json`. La pagina generada no contiene secretos.
 
+## Pagina local
+
+Caddy sirve la pagina generada en `https://<SERVER_HOST>/addons/`, solo desde
+rangos privados. `<SERVER_HOST>` es el valor de `.env` (por ejemplo, la IP LAN
+del servidor). Los dispositivos necesitan confiar en la CA interna
+(`data/caddy/pki/authorities/local/root.crt`).
+
+Si el navegador da un error TLS al entrar por IP, revisar que el bloque global
+del `Caddyfile` tenga `default_sni {$SERVER_HOST}`. Sin esa opcion, Caddy no
+encuentra certificado cuando el cliente no manda SNI y aborta el handshake.
+
 ## Instalar en Stremio o Nuvio
 
 1. Abrir el addon en modo **Configurar** (no instalar el manifest base si es configurable).

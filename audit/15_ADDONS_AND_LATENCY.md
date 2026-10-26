@@ -74,7 +74,26 @@ Para 3–8 s hace falta una fuente legal con LL-HLS o DASH low-latency. No se pu
 - `scripts/mpv-latency.ps1`: instala perfil estable o bajo delay con backup y hash.
 - `docs/ADDONS.md`: guia de instalacion y regla P2P.
 
-## 6. Limites y riesgos
+## 6. HTTPS LAN por IP (fix 2026-10-26)
+
+Sintoma: `caddy` figuraba healthy y `http://IP/addons/` redirigia bien con 301,
+pero `https://IP/addons/` fallaba con `ERR_SSL_TLSV1_ALERT_INTERNAL_ERROR`
+(Schannel) y `TLSV1_ALERT_INTERNAL_ERROR` (OpenSSL/Python).
+
+Causa: los clientes que entran por IP no mandan SNI. Caddy 2.11.7 tomaba como
+identificador la IP interna del contenedor (172.18.0.3), no encontraba un
+certificado para esa IP y abortaba el handshake con
+`no certificate available for '172.18.0.3'`.
+
+Fix: `default_sni {$SERVER_HOST}` en el bloque global del `Caddyfile`. Cuando
+`ServerName` viene vacio, Caddy cae al certificado por defecto del host
+(192.168.0.122) en lugar de buscar el de la IP interna.
+
+Verificacion: `curl -k https://<SERVER_HOST>/addons/` devuelve 200 con las 17
+tarjetas; `https://<SERVER_HOST>/` devuelve 200; `caddy validate` responde
+`Valid configuration`.
+
+## 7. Limites y riesgos
 
 - Los scrapers P2P pueden indexar contenido sin licencia; el debrid no lo legaliza.
 - Los eventos de Sports Streams pueden devolver 0 streams.
