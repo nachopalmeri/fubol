@@ -38,6 +38,18 @@ https://{$SERVER_HOST} {
 			respond "Not found" 404
 		}
 	}
+	# Catalogo de addons generado por scripts/addons.mjs. Sin secretos.
+	handle /addons/* {
+		@lan remote_ip private_ranges
+		handle @lan {
+			uri strip_prefix /addons
+			root * /srv/addons
+			file_server
+		}
+		handle {
+			respond "Not found" 404
+		}
+	}
 	reverse_proxy aiostreams:3000
 }
 

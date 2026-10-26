@@ -102,6 +102,14 @@ Actualizado: 2026-10-24
 - La TV Samsung UN32J4290 (Tizen 2.3) no puede instalar AIOStreams/Stremio; usar la PC por HDMI o autorizar un stick.
 - El iPhone necesita confiar la CA local; MKV no es nativo en Safari y aún falta una prueba real de reproducción.
 
+## Hecho 2026-10-24 (noche, addons)
+- Catálogo curado `config/addons/catalog.json` con 17 addons oficiales/open source/configurables, licencia, riesgo y nota; separa P2P de vivo oficial.
+- `scripts/addons.mjs` verifica manifests en vivo y genera `public/addons/index.html` sin secretos.
+- Verificación: Torrentio, Comet, MediaFusion, Meteor, AIO Metadata, Cinemeta, TMDB, OpenSubtitles PRO, SubSource, SubDL, Community Subtitles y SubSense responden 200. StremThru y Sootio no tienen URL estable y quedan fuera.
+- `config/mpv/mpv.low.conf` + `scripts/mpv-latency.ps1`: perfil de 8 s con backup y verificación de hash; el estable de 18 s sigue siendo el default.
+- `docs/ADDONS.md` y `audit/15_ADDONS_AND_LATENCY.md`: instalación, regla P2P, presupuesto de latencia y límites legales.
+- No se integraron MeteGol, ChocoPop ni scrapers de canales de pago: solo se documentó su tecnología pública.
+
 ## Hecho 2026-10-24 (noche)
 - VOD sin TorBox pasó de “0 streams” a modo P2P: película `tt0111161` devuelve 508 streams `infoHash`; serie `tt0944947:1:1` devuelve 314. Stremio/Nuvio los reproduce; AIOStreams Desktop no.
 - `scripts/lib/torbox-mode.mjs` centraliza la regla: con clave, TorBox + service wrap; sin clave, sin servicio y presets P2P activos (`knaben`, `stremthruTorz`, `animetosho` quedan off porque exigen debrid).

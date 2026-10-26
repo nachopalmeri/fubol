@@ -74,6 +74,7 @@ services:
       - ./data/caddy:/data
       - ./data/caddy_config:/config
       - ./public/family:/srv/family:ro
+      - ./public/addons:/srv/addons:ro
     depends_on:
       aiostreams:
         condition: service_healthy

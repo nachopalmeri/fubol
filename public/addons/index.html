@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#101820"><title>Fubol - Addons</title>
+<style>
+:root{color-scheme:dark;font:16px system-ui,sans-serif;background:#0c141b;color:#f4f6f7}
+*{box-sizing:border-box}body{margin:0;padding:32px 20px 64px;line-height:1.5}
+main{max-width:1080px;margin:0 auto}h1{font-size:2rem;margin:0 0 .2em}h2{font-size:1.15rem;margin:2.2em 0 .8em;color:#b7f36b}
+p{color:#c6d0d7;margin:.4em 0}.lede{max-width:70ch}.note{border-left:3px solid #b7f36b;padding-left:12px;color:#c6d0d7}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px}
+.card{background:#121e27;border:1px solid #22323e;border-radius:14px;padding:16px;display:flex;flex-direction:column;gap:8px}
+.card header{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.card h3{font-size:1.05rem;margin:0}.card p{font-size:.9rem;flex:1}
+.meta{color:#9baab4;font-size:.78rem;display:flex;align-items:center;gap:8px}
+.badge{font-size:.7rem;padding:3px 8px;border-radius:999px;white-space:nowrap}
+.badge.ok{background:#1f3d22;color:#b7f36b}.badge.down{background:#3d1f1f;color:#ff9b9b}.badge.manual{background:#2a3340;color:#c6d0d7}
+.risk{font-size:.7rem;padding:2px 7px;border-radius:999px;background:#2a3340;color:#c6d0d7}
+.risk.official{background:#1f3d22;color:#b7f36b}.risk.gray{background:#3d321f;color:#ffd28a}
+.actions{display:flex;gap:8px;flex-wrap:wrap}
+.actions a{text-decoration:none;font-size:.85rem;font-weight:600;padding:9px 12px;border-radius:9px}
+.primary{background:#b7f36b;color:#101820}.ghost{border:1px solid #334552;color:#c6d0d7}
+footer{margin-top:36px;color:#7f8f9b;font-size:.8rem}
+</style></head><body><main>
+<h1>Addons de Fubol</h1>
+<p class="lede">Catalogo curado de addons oficiales, open source y configurables para Stremio/Nuvio. Los scrapers P2P estan marcados: su codigo puede ser abierto, pero el contenido que indexan puede no estar licenciado.</p>
+<p class="note">Regla P2P: si usas el debrid nativo de Nuvio (TorBox/Premiumize), configura los scrapers sin API key y en modo P2P. Si el addon resuelve debrid, Nuvio nunca ve el hash.</p>
+<section><h2>Streams y scrapers</h2><div class="grid"><article class="card">
+  <header><h3>AIOStreams</h3><span class="badge manual">manual</span></header>
+  <p>Agregador principal de Fubol. Sin key de debrid queda en P2P; con TorBox resuelve debrid. El manifest privado sale de scripts/aiostreams-config.mjs.</p>
+  <p class="meta"><span class="risk gray">P2P</span> MIT</p>
+  <div class="actions">
+    <a class="primary" href="http://127.0.0.1:3000" target="_blank" rel="noreferrer">Instalar</a>
+    
+  </div>
+</article>
+<article class="card">
+  <header><h3>Torrentio</h3><span class="badge ok">activo</span></header>
+  <p>Scraper P2P clasico. Devuelve hashes; ideal para el debrid nativo de Nuvio.</p>
+  <p class="meta"><span class="risk gray">P2P</span> MIT</p>
+  <div class="actions">
+    <a class="primary" href="https://torrentio.strem.fun/configure" target="_blank" rel="noreferrer">Configurar</a>
+    <a class="ghost" href="https://torrentio.strem.fun/manifest.json" target="_blank" rel="noreferrer">Manifest</a>
+  </div>
+</article>
+<article class="card">
+  <header><h3>Comet</h3><span class="badge ok">activo</span></header>
+  <p>Scraper P2P con filtros. Configurar sin debrid si se usa el resolvedor nativo de Nuvio.</p>
+  <p class="meta"><span class="risk gray">P2P</span> MIT</p>
+  <div class="actions">
+    <a class="primary" href="https://comet.feels.legal/configure" target="_blank" rel="noreferrer">Configurar</a>
+    <a class="ghost" href="https://comet.feels.legal/manifest.json" target="_blank" rel="noreferrer">Manifest</a>
+  </div>
+</article>
+<article class="card">
+  <header><h3>MediaFusion</h3><span class="badge ok">activo</span></header>
+  <p>Scraper + catalogos. Mas pesado; util como respaldo de VOD y deportes.</p>
+  <p class="meta"><span class="risk gray">P2P</span> MIT</p>
+  <div class="actions">
+    <a class="primary" href="https://mediafusionfortheweebs.midnightignite.me/configure" target="_blank" rel="noreferrer">Configurar</a>
+    <a class="ghost" href="https://mediafusionfortheweebs.midnightignite.me/manifest.json" target="_blank" rel="noreferrer">Manifest</a>
+  </div>
+</article>
+<article class="card">
+  <header><h3>Meteor</h3><span class="badge ok">activo</span></header>
+  <p>Scraper P2P liviano. Buen complemento cuando AIOStreams necesita mas resultados.</p>
+  <p class="meta"><span class="risk gray">P2P</span> MIT</p>
+  <div class="actions">
+    <a class="primary" href="https://meteorfortheweebs.midnightignite.me/configure" target="_blank" rel="noreferrer">Configurar</a>
+    <a class="ghost" href="https://meteorfortheweebs.midnightignite.me/manifest.json" target="_blank" rel="noreferrer">Manifest</a>
+  </div>
+</article></div></section>
+<section><h2>Metadata y posters</h2><div class="grid"><article class="card">
+  <header><h3>AIO Metadata</h3><span class="badge ok">activo</span></header>
+  <p>Metadata TMDB/TVDB/TVMaze/MAL/IMDB. Requiere configurar; la instancia base no trae resources.</p>
+  <p class="meta"><span class="risk official">oficial</span> MIT</p>
+  <div class="actions">
+    <a class="primary" href="https://aiometadata.elfhosted.com/configure" target="_blank" rel="noreferrer">Configurar</a>
+    <a class="ghost" href="https://aiometadata.elfhosted.com/manifest.json" target="_blank" rel="noreferrer">Manifest</a>
+  </div>
+</article>
+<article class="card">
+  <header><h3>Cinemeta v3</h3><span class="badge ok">activo</span></header>
+  <p>Metadata base de Stremio. Ya integrado en AIOStreams; desactivar si se usa AIO Metadata.</p>
+  <p class="meta"><span class="risk official">oficial</span> MIT</p>
+  <div class="actions">
+    <a class="primary" href="stremio://v3-cinemeta.strem.io/manifest.json" target="_blank" rel="noreferrer">Instalar</a>
+    <a class="ghost" href="https://v3-cinemeta.strem.io/manifest.json" target="_blank" rel="noreferrer">Manifest</a>
+  </div>
+</article>
+<article class="card">
+  <header><h3>TMDB Addon</h3><span class="badge ok">activo</span></header>
+  <p>Metadata directa de TMDB. Alternativa si AIO Metadata no cubre un idioma.</p>
+  <p class="meta"><span class="risk official">oficial</span> MIT</p>
+  <div class="actions">
+    <a class="primary" href="https://tmdb.elfhosted.com/configure" target="_blank" rel="noreferrer">Configurar</a>
+    <a class="ghost" href="https://tmdb.elfhosted.com/manifest.json" target="_blank" rel="noreferrer">Manifest</a>
+  </div>
+</article>
+<article class="card">
+  <header><h3>Rating Poster Database</h3><span class="badge manual">manual</span></header>
+  <p>Badges de rating sobre posters. Requiere API key; hay claves free tier.</p>
+  <p class="meta"><span class="risk official">oficial</span> propietario</p>
+  <div class="actions">
+    <a class="primary" href="https://ratingposterdb.com/" target="_blank" rel="noreferrer">Abrir</a>
+    
+  </div>
+</article></div></section>
+<section><h2>Subtitulos</h2><div class="grid"><article class="card">
+  <header><h3>OpenSubtitles PRO</h3><span class="badge ok">activo</span></header>
+  <p>El mas completo para ES/EN. Ya integrado como preset opensubtitles-v3-plus.</p>
+  <p class="meta"><span class="risk official">oficial</span> MIT</p>
+  <div class="actions">
+    <a class="primary" href="https://opensubtitlesv3-pro.dexter21767.com/configure/" target="_blank" rel="noreferrer">Configurar</a>
+    <a class="ghost" href="https://opensubtitlesv3-pro.dexter21767.com/manifest.json" target="_blank" rel="noreferrer">Manifest</a>
+  </div>
+</article>
+<article class="card">
+  <header><h3>SubSource</h3><span class="badge ok">activo</span></header>
+  <p>Buena cobertura ES. Respaldo de OpenSubtitles.</p>
+  <p class="meta"><span class="risk official">oficial</span> MIT</p>
+  <div class="actions">
+    <a class="primary" href="https://subsource.strem.top/configure" target="_blank" rel="noreferrer">Configurar</a>
+    <a class="ghost" href="https://subsource.strem.top/manifest.json" target="_blank" rel="noreferrer">Manifest</a>
+  </div>
+</article>
+<article class="card">
+  <header><h3>SubDL</h3><span class="badge ok">activo</span></header>
+  <p>Alternativa con catalogo amplio; util para titulos que faltan en OpenSubtitles.</p>
+  <p class="meta"><span class="risk official">oficial</span> MIT</p>
+  <div class="actions">
+    <a class="primary" href="https://subdl.strem.top/configure" target="_blank" rel="noreferrer">Configurar</a>
+    <a class="ghost" href="https://subdl.strem.top/manifest.json" target="_blank" rel="noreferrer">Manifest</a>
+  </div>
+</article>
+<article class="card">
+  <header><h3>Stremio Community Subtitles</h3><span class="badge ok">activo</span></header>
+  <p>Subtitulos de la comunidad; sin configuracion.</p>
+  <p class="meta"><span class="risk official">oficial</span> MIT</p>
+  <div class="actions">
+    <a class="primary" href="stremio://stremio-community-subtitles.top/manifest.json" target="_blank" rel="noreferrer">Instalar</a>
+    <a class="ghost" href="https://stremio-community-subtitles.top/manifest.json" target="_blank" rel="noreferrer">Manifest</a>
+  </div>
+</article>
+<article class="card">
+  <header><h3>SubSense</h3><span class="badge ok">activo</span></header>
+  <p>Addon liviano; buen tercer respaldo.</p>
+  <p class="meta"><span class="risk official">oficial</span> MIT</p>
+  <div class="actions">
+    <a class="primary" href="https://subsense.nepiraw.com/configure" target="_blank" rel="noreferrer">Configurar</a>
+    <a class="ghost" href="https://subsense.nepiraw.com/manifest.json" target="_blank" rel="noreferrer">Manifest</a>
+  </div>
+</article></div></section>
+<section><h2>Vivo oficial</h2><div class="grid"><article class="card">
+  <header><h3>LPF Play</h3><span class="badge manual">manual</span></header>
+  <p>Fuente oficial de AFA para las competencias que publique en su agenda. Requiere cuenta y disponibilidad por region.</p>
+  <p class="meta"><span class="risk official">oficial</span> oficial</p>
+  <div class="actions">
+    <a class="primary" href="https://www.lpfplay.com/" target="_blank" rel="noreferrer">Abrir</a>
+    
+  </div>
+</article>
+<article class="card">
+  <header><h3>FIFA+</h3><span class="badge manual">manual</span></header>
+  <p>Partidos historicos y eventos seleccionados, gratis y legal. No cubre ligas locales.</p>
+  <p class="meta"><span class="risk official">oficial</span> oficial</p>
+  <div class="actions">
+    <a class="primary" href="https://www.plus.fifa.com/" target="_blank" rel="noreferrer">Abrir</a>
+    
+  </div>
+</article>
+<article class="card">
+  <header><h3>UEFA.tv</h3><span class="badge manual">manual</span></header>
+  <p>Archivo y competencias juveniles. Disponibilidad por pais.</p>
+  <p class="meta"><span class="risk official">oficial</span> oficial</p>
+  <div class="actions">
+    <a class="primary" href="https://www.uefa.tv/" target="_blank" rel="noreferrer">Abrir</a>
+    
+  </div>
+</article></div></section>
+<footer>Generado 2026-10-25T01:58:24.103Z desde config/addons/catalog.json. Estado verificado al generar la pagina; puede cambiar.</footer>
+</main></body></html>
