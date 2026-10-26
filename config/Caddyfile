@@ -33,6 +33,8 @@ http://{$SERVER_HOST} {
 https://{$SERVER_HOST} {
 	tls internal
 	encode zstd gzip
+	# Sin barra final, redirigir a la pagina en vez de caer en AIOStreams.
+	redir /addons /addons/ 308
 	handle /family-setup/* {
 		@lan remote_ip private_ranges
 		handle @lan {
