@@ -51,9 +51,18 @@ services:
       TZ: ${TZ:-America/Argentina/Buenos_Aires}
     volumes:
       - ./data/aiostreams:/app/data
-    # healthcheck: se hereda de la imagen oficial
+    # healthcheck: mismo test que la imagen oficial
     # (scripts/healthcheck.js -> GET http://localhost:3000/api/v1/status).
-    # No lo sobreescribas salvo que conozcas la ruta real; /health NO existe.
+    # No cambiar la ruta; /health NO existe. Se agrega start_period porque el
+    # arranque sincroniza datasets (anime, id-mappings, scene) y puede tardar
+    # ~90 s en un volumen nuevo; sin eso se marca unhealthy antes de abrir el
+    # puerto y `docker compose up -d` falla por la dependencia de Caddy.
+    healthcheck:
+      test: ["CMD", "/nodejs/bin/node", "/app/scripts/healthcheck.js"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 180s
 
   caddy:
     image: caddy:latest

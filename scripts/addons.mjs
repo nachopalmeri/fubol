@@ -187,7 +187,7 @@ p{color:#c6d0d7;margin:.4em 0}.lede{max-width:70ch}.note{border-left:3px solid #
 footer{margin-top:36px;color:#7f8f9b;font-size:.8rem}
 </style></head><body><main>
 <h1>Addons de Fubol</h1>
-<p class="lede">Catalogo curado de addons oficiales, open source y configurables para Stremio/Nuvio. Los scrapers P2P estan marcados: su codigo puede ser abierto, pero el contenido que indexan puede no estar licenciado.</p>
+<p class="lede">Catalogo curado de addons oficiales, open source y configurables para Stremio/Nuvio. Los scrapers P2P estan marcados: su codigo puede ser abierto, pero el contenido que indexan puede no estar licenciado. La licencia <strong>verificar</strong> significa que el addon es hosted y no se encontro un repo publico con licencia.</p>
 <p class="note">Regla P2P: si usas el debrid nativo de Nuvio (TorBox/Premiumize), configura los scrapers sin API key y en modo P2P. Si el addon resuelve debrid, Nuvio nunca ve el hash.</p>
 ${sections}
 <footer>Generado ${escapeHtml(generated)} desde config/addons/catalog.json. Estado verificado al generar la pagina; puede cambiar.</footer>

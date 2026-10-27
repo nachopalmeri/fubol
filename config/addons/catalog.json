@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "updated": "2026-10-24",
-  "policy": "Solo addons oficiales, open source o configurables. Los scrapers P2P figuran como 'gray': su codigo puede ser abierto, pero el contenido que indexan puede no estar licenciado. Fubol no aloja, scrapea ni reemite streams.",
+  "updated": "2026-10-27",
+  "policy": "Solo addons oficiales, open source o configurables. Los scrapers P2P figuran como 'gray': su codigo puede ser abierto, pero el contenido que indexan puede no estar licenciado. Fubol no aloja, scrapea ni reemite streams. La licencia 'verificar' significa que el addon se distribuye como servicio hosted y no se encontro un repo publico con licencia; no asumir que es open source.",
   "addons": [
     {
       "id": "aiostreams",
@@ -11,7 +11,7 @@
       "install": "http://127.0.0.1:3000",
       "manifest": null,
       "config": "http://127.0.0.1:3000",
-      "license": "MIT",
+      "license": "AGPL-3.0",
       "risk": "gray",
       "resources": ["stream", "catalog", "meta", "subtitles"],
       "note": "Agregador principal de Fubol. Sin key de debrid queda en P2P; con TorBox resuelve debrid. El manifest privado sale de scripts/aiostreams-config.mjs."
@@ -24,7 +24,7 @@
       "install": "https://torrentio.strem.fun/configure",
       "manifest": "https://torrentio.strem.fun/manifest.json",
       "config": "https://torrentio.strem.fun/configure",
-      "license": "MIT",
+      "license": "Apache-2.0",
       "risk": "gray",
       "resources": ["stream"],
       "note": "Scraper P2P clasico. Devuelve hashes; ideal para el debrid nativo de Nuvio."
@@ -37,7 +37,7 @@
       "install": "https://comet.feels.legal/configure",
       "manifest": "https://comet.feels.legal/manifest.json",
       "config": "https://comet.feels.legal/configure",
-      "license": "MIT",
+      "license": "GPL-3.0",
       "risk": "gray",
       "resources": ["stream"],
       "note": "Scraper P2P con filtros. Configurar sin debrid si se usa el resolvedor nativo de Nuvio."
@@ -63,7 +63,7 @@
       "install": "https://meteorfortheweebs.midnightignite.me/configure",
       "manifest": "https://meteorfortheweebs.midnightignite.me/manifest.json",
       "config": "https://meteorfortheweebs.midnightignite.me/configure",
-      "license": "MIT",
+      "license": "sin licencia",
       "risk": "gray",
       "resources": ["stream"],
       "note": "Scraper P2P liviano. Buen complemento cuando AIOStreams necesita mas resultados."
@@ -76,7 +76,7 @@
       "install": "https://aiometadata.elfhosted.com/configure",
       "manifest": "https://aiometadata.elfhosted.com/manifest.json",
       "config": "https://aiometadata.elfhosted.com/configure",
-      "license": "MIT",
+      "license": "verificar",
       "risk": "official",
       "resources": ["meta", "catalog"],
       "note": "Metadata TMDB/TVDB/TVMaze/MAL/IMDB. Requiere configurar; la instancia base no trae resources."
@@ -89,7 +89,7 @@
       "install": "https://v3-cinemeta.strem.io/manifest.json",
       "manifest": "https://v3-cinemeta.strem.io/manifest.json",
       "config": null,
-      "license": "MIT",
+      "license": "verificar",
       "risk": "official",
       "resources": ["catalog", "meta"],
       "note": "Metadata base de Stremio. Ya integrado en AIOStreams; desactivar si se usa AIO Metadata."
@@ -102,7 +102,7 @@
       "install": "https://tmdb.elfhosted.com/configure",
       "manifest": "https://tmdb.elfhosted.com/manifest.json",
       "config": "https://tmdb.elfhosted.com/configure",
-      "license": "MIT",
+      "license": "verificar",
       "risk": "official",
       "resources": ["meta", "catalog"],
       "note": "Metadata directa de TMDB. Alternativa si AIO Metadata no cubre un idioma."
@@ -115,7 +115,7 @@
       "install": "https://opensubtitlesv3-pro.dexter21767.com/configure/",
       "manifest": "https://opensubtitlesv3-pro.dexter21767.com/manifest.json",
       "config": "https://opensubtitlesv3-pro.dexter21767.com/configure/",
-      "license": "MIT",
+      "license": "verificar",
       "risk": "official",
       "resources": ["subtitles"],
       "note": "El mas completo para ES/EN. Ya integrado como preset opensubtitles-v3-plus."
@@ -128,7 +128,7 @@
       "install": "https://subsource.strem.top/configure",
       "manifest": "https://subsource.strem.top/manifest.json",
       "config": "https://subsource.strem.top/configure",
-      "license": "MIT",
+      "license": "verificar",
       "risk": "official",
       "resources": ["subtitles"],
       "note": "Buena cobertura ES. Respaldo de OpenSubtitles."
@@ -141,7 +141,7 @@
       "install": "https://subdl.strem.top/configure",
       "manifest": "https://subdl.strem.top/manifest.json",
       "config": "https://subdl.strem.top/configure",
-      "license": "MIT",
+      "license": "verificar",
       "risk": "official",
       "resources": ["subtitles"],
       "note": "Alternativa con catalogo amplio; util para titulos que faltan en OpenSubtitles."
@@ -154,7 +154,7 @@
       "install": "https://stremio-community-subtitles.top/manifest.json",
       "manifest": "https://stremio-community-subtitles.top/manifest.json",
       "config": null,
-      "license": "MIT",
+      "license": "verificar",
       "risk": "official",
       "resources": ["subtitles"],
       "note": "Subtitulos de la comunidad; sin configuracion."

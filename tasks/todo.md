@@ -1,6 +1,6 @@
 # Fubol — estado de ejecución
 
-Actualizado: 2026-10-26
+Actualizado: 2026-10-27
 
 ## F0 — Runtime y baseline
 - [x] Verificar virtualización (SVM/SLAT: OK)
@@ -101,6 +101,13 @@ Actualizado: 2026-10-26
 - “Cero delay” no se puede garantizar con HLS gratuito: el origen medido está ~25-35 s detrás y el player suma ~12 s (~35-45 s total). Si el origen es un re-stream de TV puede estar más atrasado. En esta casa no hay cable; la antena debe confirmarse en la TV. Si no está conectada o el partido no sale en TV abierta, internet mantiene delay.
 - La TV Samsung UN32J4290 (Tizen 2.3) no puede instalar AIOStreams/Stremio; usar la PC por HDMI o autorizar un stick.
 - El iPhone necesita confiar la CA local; MKV no es nativo en Safari y aún falta una prueba real de reproducción.
+
+## Hecho 2026-10-27 (cold start + licencias)
+- Docker Desktop estaba caído tras el reinicio; se levantó el núcleo y `aiostreams` + `caddy` quedaron healthy.
+- AIOStreams: healthcheck con `start_period: 180s`. El arranque sincroniza datasets (~90 s en volumen nuevo) y antes se marcaba unhealthy; `docker compose up -d` fallaba por la dependencia de Caddy.
+- Licencias corregidas: AIOStreams AGPL-3.0, Comet GPL-3.0, Torrentio Apache-2.0, Meteor sin licencia. Addons hosted sin repo verificable = `verificar`; no asumir MIT.
+- `docs/OPEN_SOURCE.md`: reglas de reutilización, repos verificados y proyectos excluidos.
+- Página regenerada: 17 addons, 12 OK, 0 caídos; `https://192.168.0.122/addons/` -> 200.
 
 ## Hecho 2026-10-26 (HTTPS LAN)
 - HTTPS por IP arreglado: `default_sni {$SERVER_HOST}` en el bloque global del `Caddyfile`. Caddy 2.11.7 no caia al certificado por defecto cuando el cliente no mandaba SNI; buscaba la IP interna del contenedor y devolvia `no certificate available`.

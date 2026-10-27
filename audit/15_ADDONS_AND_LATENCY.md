@@ -52,6 +52,8 @@ Su `docs/LEGAL.md` declara que los streams provienen de servicios que re-emiten 
 
 No disponibles en la verificacion: StremThru (404 en la raiz) y Sootio (DNS no resuelve). No se agregan al catalogo hasta confirmar una URL estable.
 
+Licencias corregidas el 2026-10-27: AIOStreams es **AGPL-3.0**, Comet **GPL-3.0** y Torrentio **Apache-2.0** (no MIT). Meteor no tiene licencia publica. Los addons hosted sin repo verificable figuran como `verificar` en `config/addons/catalog.json`. Detalle y reglas de reutilizacion en `docs/OPEN_SOURCE.md`.
+
 ## 4. Latencia
 
 Medicion previa sobre el origen Sky Sports: ventana HLS de 8×6 s, inicio del playlist ~76 s atras, borde ~28 s atras. El player arranca ~12 s antes del borde con `live_start_index=-2`.

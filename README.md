@@ -16,6 +16,7 @@ Stack self-hosted, on-demand, sin descargas locales masivas, sin anuncios. Cubre
 > Guías: `docs/WIRING.md` (instalación), `docs/TV.md` (portar a la TV) y
 > `docs/GUIA_FAMILIA.md` (uso simple), `docs/GUIA_IPHONE.md` (iPhone).
 > Addons y latencia: `docs/ADDONS.md`; catálogo verificable con `node scripts/addons.mjs status`.
+> Reutilización de código: `docs/OPEN_SOURCE.md` (licencias y límites).
 > Revisión de addons/fuentes: `audit/14_ADDON_REVIEW.md`, `audit/15_ADDONS_AND_LATENCY.md` y `audit/13_SPORTS_SOURCES_AND_TRIAL.md`.
 
 ## Arquitectura (Etapa A)

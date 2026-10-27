@@ -63,6 +63,11 @@ En Fubol, `node scripts/aiostreams-config.mjs status` muestra `vod_mode=p2p` cua
 
 Los cinco devuelven torrents/hashes. Su licencia de codigo no otorga derechos sobre el contenido.
 
+Licencias verificadas el 2026-10-27: AIOStreams **AGPL-3.0**, Comet **GPL-3.0**,
+Torrentio **Apache-2.0**, MediaFusion **MIT**, Meteor **sin licencia**. En el
+catalogo, `verificar` significa addon hosted sin repo publico con licencia; no
+asumir que es open source. Reglas de reutilizacion en `docs/OPEN_SOURCE.md`.
+
 ### Metadata y posters
 
 | Addon | Rol |
