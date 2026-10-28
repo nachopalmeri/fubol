@@ -23,6 +23,46 @@ x-logging: &default-logging
 
 services:
   # --------------------------------------------------------------------------
+  # App web familiar (Fubol)
+  # --------------------------------------------------------------------------
+  fubol:
+    build:
+      context: ./web
+    container_name: fubol
+    restart: unless-stopped
+    logging: *default-logging
+    init: true
+    ports:
+      - "3001:3001"
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      HOSTNAME: 0.0.0.0
+      TZ: ${TZ:-America/Argentina/Buenos_Aires}
+      FUBOL_DATA_DIR: /data
+      FUBOL_BASE_URL: ${FUBOL_BASE_URL:-}
+      FUBOL_ADMIN_PASSWORD: ${FUBOL_ADMIN_PASSWORD:-}
+      FUBOL_SECRET: ${FUBOL_SECRET:-}
+      FUBOL_ALLOW_PRIVATE_SOURCES: ${FUBOL_ALLOW_PRIVATE_SOURCES:-0}
+      FUBOL_INSECURE_COOKIES: ${FUBOL_INSECURE_COOKIES:-0}
+      FUBOL_INCLUDE_INTERNATIONAL: ${FUBOL_INCLUDE_INTERNATIONAL:-1}
+      FUBOL_ICS_URLS: ${FUBOL_ICS_URLS:-}
+      FUBOL_NO_DEFAULT_ADDONS: ${FUBOL_NO_DEFAULT_ADDONS:-0}
+      FUBOL_LOG_LEVEL: ${FUBOL_LOG_LEVEL:-info}
+      SPORTSDB_KEY: ${SPORTSDB_KEY:-123}
+      SUBSYNC_URL: ${SUBSYNC_URL:-}
+      OPENSUBTITLES_API_KEY: ${OPENSUBTITLES_API_KEY:-}
+    volumes:
+      - ./data/fubol:/data
+    healthcheck:
+      test:
+        ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  # --------------------------------------------------------------------------
   # Nucleo
   # --------------------------------------------------------------------------
   aiostreams:

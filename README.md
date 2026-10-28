@@ -1,11 +1,48 @@
-# Centro de Streaming Privado - Stremio/Nuvio + TorBox + AIOStreams
+# Fubol — fútbol en vivo, VOSE y link familiar
+
+Dos capas conviven en este repo:
+
+- **`web/` — app web familiar (nueva, 2026-10):** Next.js 16 + hls.js + SQLite.
+  Link `/f/CODIGO`, vivo multi-fuente con failover, VOD por addons, subtítulos
+  VOSE con sync, panel de administración y PWA. Documentación:
+  [`docs/FUBOL.md`](docs/FUBOL.md) y [`docs/REUTILIZACION.md`](docs/REUTILIZACION.md).
+- **Stack previo AIOStreams/Caddy/TorBox:** sigue documentado abajo y no se toca
+  desde la app nueva.
+
+## App web familiar (Fubol)
+
+```bash
+cd web
+npm ci
+npm run dev            # http://localhost:3001
+```
+
+Primer arranque: la password de admin queda en `web/data/admin-password.txt` (o
+se define con `FUBOL_ADMIN_PASSWORD`). En `/admin` se cargan fuentes HLS/M3U/
+Xtream/addons y se crean links familiares. El link se comparte como
+`https://TU-DOMINIO/f/CODIGO` y se revoca desde el mismo panel.
+
+Producción con Docker:
+
+```bash
+docker compose up -d --build fubol   # :3001, datos en ./data/fubol
+```
+
+Verificación: `cd web && npm run check && npm run build`. La app no incluye
+scrapers de señales premium ni listas IPTV sin autorización: integra las fuentes
+que el operador configura. Detalle de latencia, subtítulos, deploy y límites en
+[`docs/FUBOL.md`](docs/FUBOL.md).
+
+## Stack previo — Stremio/Nuvio + TorBox + AIOStreams
 
 Stack self-hosted, on-demand, sin descargas locales masivas, sin anuncios. Cubre peliculas, series, deportes en vivo y subtitulos VOSE (ES/EN) sincronizados. Para ti y 2-3 familiares.
 
 > **Estado: runtime local + 13 catalogos + deportes; VOD en Stremio por P2P, VOD en Desktop pendiente de TorBox.**
+
 > El nucleo (`aiostreams` + `caddy`) arranca desde la raiz del repo, es accesible por HTTPS
-> en la LAN y los dashboards estan protegidos. La app web sirve para configurar/explorar,
+> en la LAN y los dashboards estan protegidos. La app web previa (`/jellyfin/web/`) sirve para configurar/explorar,
 > pero **no reproduce HLS**; para deportes y MKV se usa la app de escritorio o Android con mpv.
+> La app nueva (`web/`, puerto 3001) sí reproduce HLS y es la ruta familiar.
 > Sin `.secrets/torbox.key`, AIOStreams queda en modo P2P: Torrentio/Comet/MediaFusion devuelven
 > streams `infoHash` que Stremio/Nuvio reproducen, pero AIOStreams Desktop no (solo abre URLs
 > directas). Para peliculas/series dentro de Desktop hay que cargar la clave TorBox; al hacerlo y

@@ -1,6 +1,28 @@
 # Fubol — estado de ejecución
 
-Actualizado: 2026-10-27
+Actualizado: 2026-10-28
+
+## F7 — App web familiar (`web/`)
+- [x] Fase 0: informe en `docs/research/` (ecosistema, player/latencia, subtítulos, distribución, plan)
+- [x] Next.js 16 + React 19 + TS estricto + hls.js + SQLite nativo
+- [x] Motor vivo HLS/M3U/Xtream/addon: probe paralelo, ranking, failover, proxy firmado anti-SSRF
+- [x] Fixtures TheSportsDB + ICS, hora argentina y estado en curso
+- [x] VOD por protocolo Stremio + Cinemeta; catálogo, búsqueda, meta, streams y subtítulos
+- [x] Subtítulos SRT/ASS→VTT, offset manual, sync por envolventes y audio sidecar opcional
+- [x] Auth HMAC, links `/f/CODE` revocables, PIN opcional, admin y rate limit
+- [x] UI dark mobile-first: home, vivo, películas, series, búsqueda, watch, admin y PWA
+- [x] Tests (78) + typecheck + lint + build
+- [x] Dockerfile standalone + servicio `fubol` en compose + healthcheck
+- [x] CI en `.github/workflows/ci.yml`
+- [x] Docs `docs/FUBOL.md` y `docs/REUTILIZACION.md`
+- [x] “Sin fuentes”: CTA de admin a `/admin?tab=addons`, aviso de addon de streams y acceso por pie de página
+- [x] `postbuild` borra `.next/standalone/data` (Turbopack trazaba SQLite/secretos)
+- [x] Smoke del build standalone en :3002 (link, admin, addons, CTA)
+- [ ] Probar con fuente real de fútbol argentino y medir latencia/estabilidad
+- [ ] Probar en iPhone/Safari y Android/Chrome reales
+- [ ] Cloudflare Tunnel nombrado + link público para la familia pasando por Caddy/túnel
+- [ ] Remux MKV/AC3→fMP4 para VOD (fase siguiente)
+- [ ] Build de Docker `fubol` (daemon no disponible en la última pasada; `compose config` OK)
 
 ## F0 — Runtime y baseline
 - [x] Verificar virtualización (SVM/SLAT: OK)
