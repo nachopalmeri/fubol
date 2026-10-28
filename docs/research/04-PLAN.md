@@ -43,7 +43,9 @@ velocidad se logra con mejor ingeniería, no copiando contenido.
 - Remux HLS bajo demanda con ffmpeg (MKV/AC3 → fMP4/AAC) y progreso.
 - Subtítulos: addons + OpenSubtitles/SubDL, SRT/ASS→VTT, ES/EN, forzados.
 - Sync: offset persistente, correlación de envolventes, sidecar ffsubsync.
-- Tests E2E con un addon fixture local (sin contenido real).
+- [x] Tests de integración de manifest + streams contra un addon fixture local
+  (sin contenido real).
+- Remux HLS bajo demanda con ffmpeg (MKV/AC3 → fMP4/AAC) y progreso sigue pendiente.
 
 ## Fase 3 — Calidad de producción
 

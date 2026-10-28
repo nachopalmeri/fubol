@@ -11,7 +11,7 @@ Actualizado: 2026-10-28
 - [x] Subtítulos SRT/ASS→VTT, offset manual, sync por envolventes y audio sidecar opcional
 - [x] Auth HMAC, links `/f/CODE` revocables, PIN opcional, admin y rate limit
 - [x] UI dark mobile-first: home, vivo, películas, series, búsqueda, watch, admin y PWA
-- [x] Tests (78) + typecheck + lint + build
+- [x] Tests (79, incluido addon fixture end-to-end) + typecheck + lint + build
 - [x] Dockerfile standalone + servicio `fubol` en compose + healthcheck
 - [x] CI en `.github/workflows/ci.yml`
 - [x] Docs `docs/FUBOL.md` y `docs/REUTILIZACION.md`

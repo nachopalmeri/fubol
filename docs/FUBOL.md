@@ -151,6 +151,8 @@ puede eliminar. La app elige lo más cercano y muestra la latencia estimada.
 - Cinemeta se usa solo para metadata pública; no trae streams.
 - Los addons de streams son configurables. Fubol no incluye addons de piratería
   por defecto ni scrapea señales premium.
+- El flujo de manifest y streams se prueba con un addon HTTP fixture local; los
+  tests no descargan ni contienen películas reales.
 - Formatos de subtítulos: SRT, ASS/SSA, WebVTT. Se normalizan a WebVTT y se
   sirven por el proxy firmado.
 - Sync:
