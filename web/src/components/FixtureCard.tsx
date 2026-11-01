@@ -41,7 +41,7 @@ export function TeamBadge({ name, size = "md" }: { name: string; size?: "sm" | "
   );
 }
 
-function ChannelButtons({ channels, compact }: { channels: Channel[]; compact?: boolean }) {
+function ChannelButtons({ channels, compact, inferred }: { channels: Channel[]; compact?: boolean; inferred?: boolean }) {
   if (channels.length === 0) {
     return <span className="fixture-nosignal">Sin señal configurada</span>;
   }
@@ -61,6 +61,7 @@ function ChannelButtons({ channels, compact }: { channels: Channel[]; compact?: 
       {channels.length > (compact ? 2 : 3) && (
         <span className="fixture-more">+{channels.length - (compact ? 2 : 3)}</span>
       )}
+      {inferred && <span className="fixture-inferred" title="El calendario no informa el canal; se deduce por el torneo.">señal probable</span>}
     </div>
   );
 }
@@ -72,7 +73,7 @@ export default function FixtureCard({
   match: FixtureMatch;
   variant?: "card" | "row" | "hero";
 }) {
-  const { fixture, channels } = match;
+  const { fixture, channels, inferred } = match;
   const status = statusLabel(fixture);
   const time = formatKickoff(fixture.kickoff);
 
@@ -91,7 +92,7 @@ export default function FixtureCard({
           <strong>{fixture.away}</strong>
         </div>
         <div className="fixture-row-competition">{fixture.league}</div>
-        <ChannelButtons channels={channels} compact />
+        <ChannelButtons channels={channels} compact inferred={inferred} />
       </article>
     );
   }
@@ -124,7 +125,7 @@ export default function FixtureCard({
           <time dateTime={new Date(fixture.kickoff).toISOString()}>{time}</time>
           <span className="tz">hora argentina</span>
         </div>
-        <ChannelButtons channels={channels} />
+        <ChannelButtons channels={channels} inferred={inferred} />
       </footer>
 
       {fixture.tv && fixture.tv.length > 0 && (

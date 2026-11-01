@@ -67,7 +67,7 @@ export default async function HomePage() {
 
         {canLive && <section className="section agenda-section" aria-labelledby="agenda-title">
           <div className="section-head">
-            <div><span className="eyebrow">Agenda · no es una señal</span><h2 id="agenda-title">Fútbol próximo</h2><p>Partidos programados. La disponibilidad de transmisión se indica solo si hay un canal asociado.</p></div>
+            <div><span className="eyebrow">Agenda · no es una señal</span><h2 id="agenda-title">Fútbol próximo</h2><p>Partidos programados. Si el calendario no informa el canal, se sugiere una señal argentina y se marca como probable.</p></div>
             <Link href="/live" className="section-link">Ver agenda <IconArrowRight size={15} /></Link>
           </div>
           {today.length ? <div className="fixture-grid">{today.map((fixture) => {

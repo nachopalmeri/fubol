@@ -134,6 +134,27 @@ hibernate timeouts are 0.
   routinely. The overlay now requires a real stall (1.2 s after playback started)
   and disappears as soon as `timeupdate` advances. The unconditional "failover
   automático" chip was removed: with a single source it was not true.
+
+## Agenda fallback and automatic recovery
+
+- TheSportsDB often ships no TV station, and team names are not part of a channel
+  name. The Boca–River card therefore showed "Sin señal configurada" with no
+  button, even though ESPN Premium was configured. `matchFixtureChannels` now
+  infers Argentine broadcasters (ESPN Premium, TNT Sports, ESPN, TyC, Fox, DeporTV,
+  Telefe/El Trece/TV Pública, in that order) only when the fixture is Argentine or
+  a Conmebol cup **and** the feed has no TV data, and only from channels whose
+  group or name says Argentina. The match is flagged `inferred` and the card shows
+  "señal probable" instead of claiming a confirmed signal.
+- Verified on the home page: the Boca–River card now offers
+  `AR · ESPN Premium (Argentina) HD` first, then DeporTV, both labelled probable.
+  The US Fox Sports channel is excluded.
+- A single-source channel used to end in the error screen when the relay died.
+  `failover` now restarts the same source once per minute before giving up, which
+  rebuilds the relay job. Verified by killing ffmpeg during playback: the video
+  froze around 12.7 s, resumed by 22.7 s and kept going, with no error screen; the
+  timeline restarted because the relay was rebuilt.
+- Tests: 126 passing (three new cases for inference, the Argentina-only filter and
+  the "not inferred when real TV data exists" case).
 - Vercel cannot host the live relay (no long-lived process, no ffmpeg, ephemeral
   filesystem, function limits, and restreaming terms). Details and alternatives in
   `docs/FAMILY_RELEASE.md`.

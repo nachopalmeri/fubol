@@ -148,4 +148,36 @@ describe("agenda helpers", () => {
     expect(match.channels).toEqual([]);
     expect(match.score).toBe(0);
   });
+
+  it("infers Argentine broadcasters when the feed has no TV station", () => {
+    const match = matchFixtureChannels(
+      fixture({ home: "Boca Juniors", away: "River Plate", tv: [] }),
+      [
+        channel("AR · DeporTV", "Argentina"),
+        channel("AR · ESPN Premium (Argentina) HD", "Argentina"),
+        channel("Cine", "Películas"),
+        channel("US : FOX SPORTS 1", "USA"),
+      ],
+    );
+    expect(match.inferred).toBe(true);
+    expect(match.channels.map((item) => item.name)).toEqual([
+      "AR · ESPN Premium (Argentina) HD",
+      "AR · DeporTV",
+    ]);
+  });
+
+  it("does not infer broadcasters for leagues outside Argentina", () => {
+    const match = matchFixtureChannels(
+      fixture({ home: "Zenit", away: "Rubin", tv: [], league: "Russian Premier League" }),
+      [channel("AR · ESPN Premium (Argentina) HD", "Argentina")],
+    );
+    expect(match.inferred).toBe(false);
+    expect(match.channels).toEqual([]);
+  });
+
+  it("does not mark a real TV match as inferred", () => {
+    const match = matchFixtureChannels(fixture(), [channel("ESPN Premium")]);
+    expect(match.inferred).toBe(false);
+    expect(match.score).toBeGreaterThan(40);
+  });
 });

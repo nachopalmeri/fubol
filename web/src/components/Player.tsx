@@ -94,6 +94,7 @@ export default function Player({
   sourcesRef.current = sources;
   const indexRef = useRef(0);
   const retriesRef = useRef(0);
+  const soloRetryAtRef = useRef(0);
   const lastProgressRef = useRef(Date.now());
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const stallTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -156,10 +157,20 @@ export default function Player({
       setStatus("switching");
       setError(reason);
       setSourceIndex(next);
-    } else {
-      setStatus("error");
-      setError(reason);
+      return;
     }
+    // With a single source there is nothing to switch to, but restarting it
+    // rebuilds the relay job; that alone recovers a dead ffmpeg. Allow one
+    // attempt per minute so a genuinely broken source does not loop.
+    if (Date.now() - soloRetryAtRef.current > 60_000) {
+      soloRetryAtRef.current = Date.now();
+      setStatus("switching");
+      setError(reason);
+      setRetryNonce((value) => value + 1);
+      return;
+    }
+    setStatus("error");
+    setError(reason);
   };
 
   /* ------------------------- playback bootstrap ------------------------- */

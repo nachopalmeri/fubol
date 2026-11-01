@@ -301,6 +301,34 @@ export interface FixtureMatch {
   fixture: Fixture;
   channels: Channel[];
   score: number;
+  /** True when the broadcaster was guessed because the feed had no TV data. */
+  inferred: boolean;
+}
+
+// Argentine rights are split between these, and TheSportsDB often ships no TV
+// station for a match. Ordered by how likely they are to carry a big match.
+const AR_BROADCASTERS: Array<{ pattern: RegExp; rank: number }> = [
+  { pattern: /espn premium/i, rank: 0 },
+  { pattern: /tnt sports/i, rank: 1 },
+  { pattern: /\bespn\b/i, rank: 2 },
+  { pattern: /tyc sports/i, rank: 3 },
+  { pattern: /fox sports/i, rank: 4 },
+  { pattern: /deportv/i, rank: 5 },
+  { pattern: /telefe|el trece|eltrece|tv p[uú]blica/i, rank: 6 },
+];
+
+function inferredBroadcasters(fixture: Fixture, channels: Channel[]): Channel[] {
+  if (!ARGENTINE.test(fixture.league) && !CUPS.test(fixture.league)) return [];
+  const ranked = channels
+    .filter((channel) => /argentin/i.test(`${channel.group ?? ""} ${channel.name ?? ""}`))
+    .map((channel) => {
+      const name = normalizeChannelName(channel.name);
+      const hit = AR_BROADCASTERS.find((candidate) => candidate.pattern.test(name));
+      return hit ? { channel, rank: hit.rank } : null;
+    })
+    .filter((entry): entry is { channel: Channel; rank: number } => entry !== null)
+    .sort((a, b) => a.rank - b.rank);
+  return ranked.slice(0, 3).map((entry) => entry.channel);
 }
 
 /** Matches a fixture to configured channels using team names and TV station. */
@@ -339,7 +367,11 @@ export function matchFixtureChannels(fixture: Fixture, channels: Channel[]): Fix
     .map((entry) => entry.channel);
 
   const best = scored.reduce((max, entry) => Math.max(max, entry.score), 0);
-  return { fixture, channels: channelsForFixture, score: best };
+  if (best === 0) {
+    const inferred = inferredBroadcasters(fixture, channels);
+    return { fixture, channels: inferred, score: 0, inferred: inferred.length > 0 };
+  }
+  return { fixture, channels: channelsForFixture, score: best, inferred: false };
 }
 
 export function formatKickoff(kickoff: number, locale = "es-AR", timeZone = process.env.TZ || "America/Argentina/Buenos_Aires"): string {
