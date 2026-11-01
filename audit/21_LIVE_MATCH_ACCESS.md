@@ -113,3 +113,27 @@ hibernate timeouts are 0.
   with `FUBOL_BASE_URL` set accordingly.
 - The working link is written to `.secrets/other-pc-link.txt` (7 days, no PIN)
   and is not committed.
+
+## Concurrency, mobile and capacity (same day, later)
+
+- Three simultaneous viewers of ESPN Premium over the LAN: all three at 39.6 s,
+  1 917 / 1 916 / 1 892 frames, 4 / 0 / 9 dropped frames, and only **one** ffmpeg
+  process with one relay directory. Viewers of the same channel share the job.
+- Three different channels at once (ESPN, DeporTV, Fox Sports): ESPN and DeporTV
+  played (35.1 s and 35.8 s, 14 and 19 dropped frames). Fox Sports stalled at
+  3 s and raised "La señal se congeló" with a Retry action. Fox reproduces the
+  same failure when opened alone (3 s, then a jump to 12 s), so it is the source,
+  not CPU contention. Fox Sports was disabled so it stops appearing as available.
+- CPU for a single 720p relay: 75–140% of one core (`docker stats`), about 1 of
+  the 12 logical CPUs. Capacity is bounded by 4 concurrent channels and by the
+  home network, not by the number of viewers of a channel.
+- Mobile layout at 390×844: video 353×198, no horizontal overflow, chips visible,
+  fullscreen control present.
+- Fixed while checking mobile: the "Conectando con la señal…" overlay covered a
+  playing video, because live HLS fires `waiting` for a few hundred milliseconds
+  routinely. The overlay now requires a real stall (1.2 s after playback started)
+  and disappears as soon as `timeupdate` advances. The unconditional "failover
+  automático" chip was removed: with a single source it was not true.
+- Vercel cannot host the live relay (no long-lived process, no ffmpeg, ephemeral
+  filesystem, function limits, and restreaming terms). Details and alternatives in
+  `docs/FAMILY_RELEASE.md`.

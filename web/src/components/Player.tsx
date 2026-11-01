@@ -96,6 +96,7 @@ export default function Player({
   const retriesRef = useRef(0);
   const lastProgressRef = useRef(Date.now());
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const stallTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastTapRef = useRef<{ at: number; x: number }>({ at: 0, x: 0 });
   const subTouchedRef = useRef(false);
   const onEndedRef = useRef(onEnded);
@@ -350,7 +351,10 @@ export default function Player({
         else if (value >= 2 && value <= 8 && video.playbackRate !== 1) video.playbackRate = 1;
       }
     }, 2000);
-    return () => clearInterval(timer);
+    return () => {
+      clearInterval(timer);
+      if (stallTimerRef.current !== null) clearTimeout(stallTimerRef.current);
+    };
   }, [mode]);
 
   /* ----------------------------- stall guard ----------------------------- */
@@ -447,6 +451,13 @@ export default function Player({
   }, [offsetMs, activeSub, storageKey]);
 
   /* ------------------------------- video UI ------------------------------ */
+  const clearStallTimer = () => {
+    if (stallTimerRef.current !== null) {
+      clearTimeout(stallTimerRef.current);
+      stallTimerRef.current = null;
+    }
+  };
+
   const onLoadedMetadata = () => {
     const video = videoRef.current;
     if (!video) return;
@@ -463,6 +474,9 @@ export default function Player({
     const video = videoRef.current;
     if (!video) return;
     lastProgressRef.current = Date.now();
+    // Time advancing means it is not buffering, whatever the last event said.
+    clearStallTimer();
+    if (status === "loading") setStatus("playing");
     setCurrent(video.currentTime);
     if (mode === "vod") {
       try {
@@ -733,6 +747,7 @@ export default function Player({
         onLoadedMetadata={onLoadedMetadata}
         onTimeUpdate={onTimeUpdate}
         onPlay={() => {
+          clearStallTimer();
           setStatus("playing");
           revealControls();
         }}
@@ -741,9 +756,21 @@ export default function Player({
           setControls(true);
         }}
         onWaiting={() => {
-          if (status !== "error" && status !== "switching") setStatus("loading");
+          if (status === "error" || status === "switching") return;
+          // Live HLS with 1 s segments hits `waiting` for a few hundred ms
+          // routinely. Only cover the picture once the stall is real.
+          const video = videoRef.current;
+          const alreadyPlaying = Boolean(video && video.currentTime > 0.5);
+          clearStallTimer();
+          stallTimerRef.current = setTimeout(
+            () => setStatus("loading"),
+            alreadyPlaying ? 1200 : 250,
+          );
         }}
-        onPlaying={() => setStatus("playing")}
+        onPlaying={() => {
+          clearStallTimer();
+          setStatus("playing");
+        }}
         onVolumeChange={() => {
           const video = videoRef.current;
           if (!video) return;

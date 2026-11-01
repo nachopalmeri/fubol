@@ -40,7 +40,6 @@ export default async function LiveWatchPage({
               : "Si el canal no aparece en el índice, puede haber cambiado en la lista de origen."}
           </p>
         </div>
-        <span className="chip chip-lime">failover automático</span>
       </header>
 
       <LiveWatch channelId={channelId} />

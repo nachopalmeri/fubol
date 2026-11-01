@@ -70,6 +70,49 @@ the visitor sent, never the container's `0.0.0.0` bind address. See
 `audit/21_LIVE_MATCH_ACCESS.md` for the measured playback, audio and
 authorization evidence.
 
+## Capacity, devices and hosting
+
+Measured on this machine (2026-11-01), 12 logical CPUs:
+
+| Question | Answer | Evidence |
+| --- | --- | --- |
+| Viewers of the same channel | No fixed limit; they share one relay job | 3 simultaneous browsers on ESPN: all at 39.6 s, 1 917/1 916/1 892 frames, 4/0/9 dropped; one ffmpeg process and one relay directory |
+| Different channels at once | 4 (`RELAY_MAX_JOBS`) | Startup plus per-channel CPU below |
+| CPU per 720p channel | ~1 core (75–140% of one core in `docker stats`) | 4 channels ≈ 4 of 12 threads |
+| Bandwidth per viewer | ~2.3 Mbps at 720p | 10 viewers ≈ 23 Mbps on the LAN |
+
+The real limits are the CPU encoding jobs and the home network, not the number
+of viewers.
+
+Android, iOS and desktop:
+
+- Android Chrome and desktop Chrome/Edge/Firefox take the hls.js path; verified
+  here at a 390×844 viewport: video 353×198 (16:9), no horizontal scroll,
+  "EN VIVO" plus latency chips, and the fullscreen control present.
+- iPhone/iPad Safari has no Media Source Extensions, so it uses the native HLS
+  path (`Hls.isSupported()` is false there). The relay emits fMP4/CMAF HLS,
+  which iOS 10+ accepts, but no physical iOS device was tested. iOS also
+  requires a tap before playing with sound, because autoplay is muted by policy.
+- Tapping the picture pauses; the controls appear at the same time. Fullscreen
+  is the button on the right of the control bar.
+
+Hosting on Vercel is not possible for the live part, and the reason is
+structural rather than configuration:
+
+- The relay spawns and supervises `ffmpeg` for as long as someone is watching.
+  Serverless functions cannot install or run that binary and are not long-lived.
+- Playback needs persistent files (the relay segments and the SQLite database).
+  Serverless filesystems are read-only except an ephemeral `/tmp`.
+- Responses are long streaming requests per segment; function duration limits and
+  per-request pricing do not fit that pattern.
+- Restreaming a subscription channel from a public cloud provider would also
+  break that provider's acceptable-use terms.
+
+What does work, in increasing order of effort: a Cloudflare Tunnel or Tailscale
+from this PC (keeps the same container, gives HTTPS and remote access), or a
+small VPS with Docker and `FUBOL_BASE_URL` set to its domain. The VPS still needs
+enough CPU to encode every channel that is watched at the same time.
+
 ## Outside the home network
 
 The private LAN address is **not an internet share link**. Public access requires a reachable HTTPS hostname, an approved reverse proxy or an authenticated private network (for example Tailscale). Never forward a router port directly to the admin panel. Set `FUBOL_BASE_URL` to the actual HTTPS origin and terminate TLS at the trusted proxy. Test anonymous rejection, PIN/permissions and revocation from an external connection before distributing links. No public hostname, VPN membership or DNS account is created automatically.
