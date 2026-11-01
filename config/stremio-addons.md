@@ -32,7 +32,7 @@ Alternativa directa: Torrentio (con TorBox): https://torrentio.strem.fun/configu
 
 ## Deportes en vivo
 - **Sports Streams** ya esta integrado en `config/aiostreams/fubol.config.json`
-  (`https://sports.highfly.dev/manifest.json`); aporta canales y eventos.
+  (`https://sports.highfly.to/configure`); aporta canales y eventos. Desde 2026-10-28 requiere completar la verificación del proveedor y guardar el manifest nuevo; el enlace viejo devuelve un aviso de reinstalación, no video. No publicar el manifest personal en Git.
   - Catálogos: `Live Now`, `Today`, `Football`, `Basketball`, `Motor Sports`, `Fight`, `Tennis`.
   - Canales con HLS real verificados: Sky Sports Premier/F1/Golf/Tennis/News, Fox Sports 1/502,
     TSN 1/5. `TNT Sport 1/2` no tenían fuente en la última medición.

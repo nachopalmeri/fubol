@@ -2,29 +2,26 @@ import Link from "next/link";
 import type { AddonMetaPreview } from "@/lib/addons";
 import { IconArrowRight } from "./icons";
 
-function hue(name: string): number {
-  let value = 0;
-  for (const char of name) value = (value * 31 + char.charCodeAt(0)) % 360;
-  return value;
-}
-
 export function PosterCard({ meta }: { meta: AddonMetaPreview }) {
-  const href = meta.type === "series" ? `/series/${encodeURIComponent(meta.id)}` : `/movie/${encodeURIComponent(meta.id)}`;
+  const href = meta.type === "series"
+    ? meta.playableId
+      ? `/watch/series/${encodeURIComponent(meta.id)}?ep=${encodeURIComponent(meta.playableId)}`
+      : `/series/${encodeURIComponent(meta.id)}`
+    : `/movie/${encodeURIComponent(meta.id)}`;
   return (
     <Link href={href} className="poster-card">
-      <div className="poster-art" style={{ "--hue": hue(meta.name) } as React.CSSProperties}>
+      <div className="poster-art">
         {meta.poster ? (
           <img src={meta.poster} alt="" loading="lazy" referrerPolicy="no-referrer" />
         ) : (
-          <span className="poster-fallback">{meta.name.slice(0, 2).toUpperCase()}</span>
+          <span className="poster-fallback" aria-hidden="true"><span>{meta.type === "series" ? "SERIE" : "PELÍCULA"}</span>{meta.name}</span>
         )}
         {meta.imdbRating ? <span className="poster-rating">{meta.imdbRating}</span> : null}
       </div>
       <div className="poster-copy">
         <strong>{meta.name}</strong>
         <span>
-          {meta.releaseInfo || ""}
-          {meta.type === "series" ? " · Serie" : " · Película"}
+          {[meta.releaseInfo, meta.type === "series" ? "Serie" : "Película"].filter(Boolean).join(" · ")}
         </span>
       </div>
     </Link>

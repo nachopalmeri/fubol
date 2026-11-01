@@ -7,6 +7,7 @@ import { shortHash } from "../crypto";
 import { subdir } from "../env";
 import { detectFormat, decodeSubtitle, toVtt } from "./format";
 import { subtitleProviders } from "../vod/service";
+import { getOpenFilm } from "../vod/open-films";
 
 export interface SubtitleOption {
   id: string;
@@ -93,9 +94,15 @@ export async function listSubtitles(
     }
   });
 
+  const openFilm = type === "movie" ? await getOpenFilm(id) : null;
+  const builtIn: SubtitleOption[] = (openFilm?.captions ?? []).map((track) => ({
+    id: track.id, lang: track.lang, langLabel: `${langLabel(track.lang)} · automática ASR`,
+    url: track.url, addonId: "open-films", addonName: track.addonName, forced: false,
+    note: "Transcripción automática vinculada a esta carga; revisar errores y sincronización.",
+  }));
   const seen = new Set<string>();
   const merged: SubtitleOption[] = [];
-  for (const option of results.flat()) {
+  for (const option of [...builtIn, ...results.flat()]) {
     if (!option.url || seen.has(option.url)) continue;
     seen.add(option.url);
     merged.push(option);

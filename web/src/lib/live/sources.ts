@@ -99,8 +99,9 @@ export function deleteLiveSource(id: string): void {
 }
 
 async function loadChannels(source: LiveSource): Promise<Channel[]> {
-  const cacheKey = `channels:${source.id}`;
-  const staleKey = `channels:stale:${source.id}`;
+  const revision = shortHash(JSON.stringify([source.kind, source.url, source.name, source.config]), 16);
+  const cacheKey = `channels:${source.id}:${revision}`;
+  const staleKey = `channels:stale:${source.id}:${revision}`;
   const cached = cacheGet<Channel[]>(cacheKey);
   if (cached) return cached;
 
@@ -136,7 +137,7 @@ async function loadChannels(source: LiveSource): Promise<Channel[]> {
           {
             id: shortHash(`${source.id}|${source.url}`, 16),
             name: source.name,
-            group: "Canales",
+            group: source.config.group ?? "Canales",
             sourceId: source.id,
             sourceName: source.name,
             kind: "hls",

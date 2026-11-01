@@ -6,6 +6,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { applyTorboxMode } from './lib/torbox-mode.mjs';
+import { applySportsManifest } from './lib/sports-manifest.mjs';
 
 const root = path.resolve(import.meta.dirname, '..');
 const envPath = path.join(root, '.env');
@@ -67,6 +68,7 @@ async function main() {
   const key = fs.existsSync(keyPath) ? fs.readFileSync(keyPath, 'utf8').trim() : '';
   try {
     applyTorboxMode(config, key);
+    applySportsManifest(config, root);
   } catch (error) {
     die(error.message);
   }

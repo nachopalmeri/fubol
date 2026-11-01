@@ -2,6 +2,28 @@
 
 Actualizado: 2026-10-28
 
+## Family release (current runtime, supersedes older startup notes)
+- [x] Continuation: Sports Streams root cause is a reinstall notice, not a real stream. New configure flow requires provider verification; normal browser opened for user. Runtime diagnostics409 and cache invalidation fixed;112web+2Node tests pass.
+- [ ] Await generated personal Sports Streams manifest (provider CAPTCHA). User rejected an open-film substitute; it is disabled by default and in Docker. Requested addon VOD still needs usable direct/resolver sources.
+- [x] Docker `fubol-web` healthy on3001, independent `compose.web.yml`, non-root and persistent `data/fubol`; AIOStreams/Caddy preserved.
+- [x] Existing10addons/3sources transferred via explicit local credential-config opt-in. New30-day PIN family link saved privately in `data/fubol/family-access.txt`; LAN auth verified after restart.
+- [x] Availability-first VOD filtering, cinematic presentation, English practice and signed-media revocation checks; final99tests/typecheck/lint/Dockerbuild pass.
+- [x] Agent review and rendered390/768/1440screenshots; acceptance evidence in `audit/18_FAMILY_RELEASE.md`.
+- [ ] Real football/Spanish commentary, working VOD resolver credentials, external HTTPS access and physical/long-running acceptance remain blocked or unverified. Historical broad sports sweep also encountered upstream429; do not claim all entries permanently dead.
+
+## Verificación integral en curso (2026-10-28)
+- [x] Diagnosticar arranque AIOStreams: reconstrucción inicial del dataset de anime tardó 4m 9s; luego terminó de iniciar y quedó healthy, sin reinicios.
+- [x] Ejecutar typecheck, lint, 83 tests y build web final.
+- [x] Verificar runtime, manifests, catálogo, reproducción de prueba, subtítulos y enlaces familiares en Chrome.
+- [x] Registrar matriz de objetivos aprobados/fallidos/bloqueados con evidencia, sin confundir fixtures con contenido real: `audit/16_WEB_ACCEPTANCE.md`.
+- [x] Registrar Torrentio en web y Sports Streams como dos fuentes de catálogos (22 fútbol + 49 en vivo). Barrido de las 72 entradas: solo la demo validó video; 71 deportivas sin fuente válida.
+- [x] Conectar OpenSubtitles v3 funcional: tres películas + un episodio con pistas ES; proxy WebVTT HTTP 200 y sync de referencia contra sí misma con offset 0 ms.
+- [x] Corregir falsos HLS: probes rechazados ya no aparecen como fuentes reproducibles. Regresión HTML/falso m3u8/503/HLS válido cubierta por cuatro tests.
+- [x] Renombrar Test HLS como demo técnica Big Buck Bunny (no es TV).
+- [ ] Resolver video VOD: Torrentio P2P registrado, pero falta resolver compatible/credencial TorBox; cero fuentes web en los cuatro títulos probados.
+- [ ] Conseguir señal deportiva reproducible; TNT SPORT 2 del catálogo no confirma TNT Sports Argentina. No se completaron fútbol real, continuidad 20 min ni VOSE sincronizado con película.
+- [ ] Validar dispositivos físicos, acceso remoto, película completa y pruebas largas; no fueron sustituidos por el smoke de demo ni por emulación móvil.
+
 ## F7 — App web familiar (`web/`)
 - [x] Fase 0: informe en `docs/research/` (ecosistema, player/latencia, subtítulos, distribución, plan)
 - [x] Next.js 16 + React 19 + TS estricto + hls.js + SQLite nativo

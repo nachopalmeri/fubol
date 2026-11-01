@@ -1,18 +1,10 @@
 import { json, requireSession, route } from "@/lib/api";
-import { getVodStreams } from "@/lib/vod/service";
+import { getPlayableVodStreams } from "@/lib/vod/service";
 import { listSubtitles } from "@/lib/subs/service";
 import { signStreamUrl, signSubtitleUrl, sanitizeHeaders } from "@/lib/stream-token";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-function sourceKind(url: string): "hls" | "mp4" {
-  try {
-    return /\.m3u8$/i.test(new URL(url).pathname) ? "hls" : "mp4";
-  } catch {
-    return /\.m3u8(\?|$)/i.test(url) ? "hls" : "mp4";
-  }
-}
 
 export const GET = route("vod_streams", async (request) => {
   await requireSession("vod");
@@ -22,7 +14,7 @@ export const GET = route("vod_streams", async (request) => {
   if (!id) return json({ error: "Falta el id" }, { status: 400 });
 
   const [streams, subtitles] = await Promise.all([
-    getVodStreams(type, id),
+    getPlayableVodStreams(type, id),
     listSubtitles(type, id).catch(() => []),
   ]);
 
@@ -41,7 +33,8 @@ export const GET = route("vod_streams", async (request) => {
       spanish: source.spanish,
       filename: source.filename,
       score: source.score,
-      kind: sourceKind(source.url),
+      kind: streams.kinds[source.id],
+      matchedSubtitleIds: source.addonId === "open-films" ? subtitles.filter((track) => track.addonId === "open-films").map((track) => track.id) : [],
       url: signStreamUrl(source.url, {
         headers: sanitizeHeaders(source.headers),
         kind: "vod",

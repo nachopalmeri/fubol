@@ -40,6 +40,7 @@ export default async function MoviePage({ params }: { params: Promise<{ id: stri
         tags={meta?.genres}
         credits={credits}
       />
+      {meta?.sourceNotice && <p className="watch-note">{meta.sourceNotice}{meta.sourcePage?.startsWith("https://archive.org/details/") && <> <a className="section-link" href={meta.sourcePage} target="_blank" rel="noopener noreferrer">Ver copia original ↗</a></>}</p>}
 
       {!meta && (
         <div className="empty-inline" style={{ marginTop: 18 }}>
@@ -60,7 +61,7 @@ export default async function MoviePage({ params }: { params: Promise<{ id: stri
         <div className="section-head">
           <div>
             <h2>Ver ahora</h2>
-            <p>Fuentes ordenadas por calidad, cache y idioma. Subtítulos VOSE automáticos.</p>
+            <p>Fuentes compatibles y subtítulos seleccionables. Se prioriza una pista de la misma copia cuando existe.</p>
           </div>
         </div>
         <VodWatch

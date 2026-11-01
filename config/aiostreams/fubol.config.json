@@ -271,7 +271,7 @@
       "enabled": true,
       "options": {
         "name": "Sports Streams",
-        "manifestUrl": "https://sports.highfly.dev/eyJoaWRlVGlwIjp0cnVlfQ/manifest.json",
+        "manifestUrl": "https://sports.highfly.to/eyJoaWRlVGlwIjp0cnVlfQ/manifest.json",
         "timeout": 10000,
         "resources": [
           "catalog",

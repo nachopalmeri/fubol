@@ -40,7 +40,7 @@ export default async function MoviesPage() {
           <p>
             {metas.length > 0
               ? `${metas.length} títulos de ${new Set(movieRows.map((row) => row.addon.name)).size} addon(s). Abrí uno para ver fuentes y subtítulos.`
-              : "Acá van a aparecer las películas de tus addons de metadata y streams."}
+              : "Solo mostramos películas con una fuente web comprobada. Los títulos sin video disponible quedan ocultos."}
           </p>
         </div>
         <div className="page-actions">
@@ -53,11 +53,11 @@ export default async function MoviesPage() {
       {metas.length === 0 ? (
         <div className="empty-state">
           <IconFilm size={30} />
-          <h2>Sin catálogo de películas</h2>
+          <h2>No hay películas disponibles ahora</h2>
           <p>
             {isAdmin
-              ? "Agregá un addon con catálogo (por ejemplo Cinemeta para metadata y un addon de streams autorizado) desde el panel."
-              : "Pedile a quien administra que conecte un addon con catálogo. Mientras tanto podés mirar los canales en vivo."}
+              ? "Los catálogos pueden tener carátulas sin video. Configurá un proveedor con enlaces MP4, WebM o HLS reproducibles; los hashes P2P y MKV no se ofrecen al navegador."
+              : "No encontramos fuentes de video compatibles. Volvé más tarde o avisale a quien administra este espacio."}
           </p>
           <div className="page-actions">
             {isAdmin ? (

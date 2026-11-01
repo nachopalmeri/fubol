@@ -40,7 +40,7 @@ export default async function SeriesPage() {
           <p>
             {metas.length > 0
               ? `${metas.length} series de ${new Set(seriesRows.map((row) => row.addon.name)).size} addon(s). Elegí temporada y episodio.`
-              : "Acá van a aparecer las series de tus addons de metadata y streams."}
+              : "Solo mostramos series con al menos un episodio comprobado. Los títulos sin video disponible quedan ocultos."}
           </p>
         </div>
         <div className="page-actions">
@@ -53,11 +53,11 @@ export default async function SeriesPage() {
       {metas.length === 0 ? (
         <div className="empty-state">
           <IconSeries size={30} />
-          <h2>Sin catálogo de series</h2>
+          <h2>No hay series disponibles ahora</h2>
           <p>
             {isAdmin
-              ? "Agregá un addon con catálogo de series desde el panel. Cinemeta aporta metadata; los streams vienen de un addon autorizado."
-              : "Pedile a quien administra que conecte un addon con catálogo. Mientras tanto podés mirar los canales en vivo."}
+              ? "Necesitás un proveedor con video web compatible para un episodio publicado. Las carátulas y los hashes P2P no cuentan como fuentes reproducibles."
+              : "No encontramos episodios con video compatible. Volvé más tarde o avisale a quien administra este espacio."}
           </p>
           <div className="page-actions">
             {isAdmin ? (

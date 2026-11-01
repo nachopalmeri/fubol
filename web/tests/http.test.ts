@@ -1,6 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   assertSafeUrl,
+  fetchUpstream,
   detectGate,
   looksLikePlaylist,
   mapLimit,
@@ -10,6 +11,17 @@ import {
 } from "../src/lib/http";
 
 describe("SSRF guard", () => {
+  it("checks redirect targets before making a request to a private host", async () => {
+    const fake = vi.fn().mockResolvedValue(new Response(null, { status: 302, headers: { location: "http://127.0.0.1/private" } }));
+    vi.stubGlobal("fetch", fake);
+    try {
+      await expect(fetchUpstream("https://1.1.1.1/start")).rejects.toThrow("privado");
+      expect(fake).toHaveBeenCalledTimes(1);
+      expect(fake.mock.calls[0]?.[1]?.redirect).toBe("manual");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
   it("rejects non-http protocols and invalid URLs", async () => {
     await expect(assertSafeUrl("ftp://example.com/a")).rejects.toThrow("http/https");
     await expect(assertSafeUrl("file:///etc/passwd")).rejects.toThrow("http/https");

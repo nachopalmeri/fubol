@@ -1,6 +1,6 @@
 import { cacheGet, cacheSet } from "./db";
 import { fetchJson, UpstreamError } from "./http";
-import { sanitizeUrl } from "./crypto";
+import { sanitizeUrl, shortHash } from "./crypto";
 
 export interface AddonResource {
   name: string;
@@ -39,9 +39,14 @@ export interface AddonMetaPreview {
   imdbRating?: string;
   runtime?: string;
   genres?: string[];
+  /** Set by local source validation, never trusted from an upstream catalog. */
+  playableId?: string;
+  availabilityCheckedAt?: number;
 }
 
 export interface AddonMeta extends AddonMetaPreview {
+  sourceNotice?: string;
+  sourcePage?: string;
   videos?: {
     id: string;
     title?: string;
@@ -78,6 +83,32 @@ export interface AddonSubtitle {
   id: string;
   url: string;
   lang: string;
+}
+
+export class AddonSetupRequired extends UpstreamError {
+  constructor(readonly configureUrl: string | null) {
+    super(`La fuente requiere actualizar su configuración${configureUrl ? ` en ${configureUrl}` : " desde su proveedor"}. Completá la verificación del proveedor y guardá el nuevo manifest.`, 409);
+    this.name = "AddonSetupRequired";
+  }
+}
+
+/** Some providers return an installation notice disguised as a video stream. */
+export function usableAddonStreams(streams: RawAddonStream[]): RawAddonStream[] {
+  let setup: AddonSetupRequired | null = null;
+  const playable = streams.filter((stream) => {
+    if (!/please reinstall|reinstall the addon|update.{0,20}addon link|addon.{0,20}reconfigur/i.test(`${stream.name ?? ""} ${stream.title ?? ""}`)) return true;
+    let configureUrl: string | null = null;
+    try {
+      const url = new URL(stream.url ?? stream.externalUrl ?? "");
+      if (url.protocol === "https:" && url.hostname === "sports.highfly.to" && url.pathname === "/configure" && !url.username && !url.password) {
+        configureUrl = "https://sports.highfly.to/configure";
+      }
+    } catch { /* An instruction without a URL is still not video. */ }
+    setup = new AddonSetupRequired(configureUrl);
+    return false;
+  });
+  if (playable.length === 0 && setup) throw setup;
+  return playable;
 }
 
 export interface AddonRef {
@@ -144,7 +175,7 @@ export async function getCatalog(
   catalogId: string,
   extra: Record<string, string | number | undefined> = {},
 ): Promise<AddonMetaPreview[]> {
-  const cacheKey = `addon:catalog:${addon.id}:${type}:${catalogId}:${JSON.stringify(extra)}`;
+  const cacheKey = `addon:catalog:${addon.id}:${shortHash(addon.url, 16)}:${type}:${catalogId}:${JSON.stringify(extra)}`;
   const cached = cacheGet<AddonMetaPreview[]>(cacheKey);
   if (cached) return cached;
   const path = `catalog/${encodeURIComponent(type)}/${encodeURIComponent(catalogId)}${extraPath(extra)}.json`;
@@ -157,7 +188,7 @@ export async function getCatalog(
 }
 
 export async function getMeta(addon: AddonRef, type: string, id: string): Promise<AddonMeta | null> {
-  const cacheKey = `addon:meta:${addon.id}:${type}:${id}`;
+  const cacheKey = `addon:meta:${addon.id}:${shortHash(addon.url, 16)}:${type}:${id}`;
   const cached = cacheGet<AddonMeta>(cacheKey);
   if (cached) return cached;
   const path = `meta/${encodeURIComponent(type)}/${encodeURIComponent(id)}.json`;
@@ -170,16 +201,16 @@ export async function getMeta(addon: AddonRef, type: string, id: string): Promis
 }
 
 export async function getStreams(addon: AddonRef, type: string, id: string): Promise<RawAddonStream[]> {
-  const cacheKey = `addon:streams:${addon.id}:${type}:${id}`;
+  const cacheKey = `addon:streams:${addon.id}:${shortHash(addon.url, 16)}:${type}:${id}`;
   const cached = cacheGet<RawAddonStream[]>(cacheKey);
-  if (cached) return cached;
+  if (cached) return usableAddonStreams(cached);
   const path = `stream/${encodeURIComponent(type)}/${encodeURIComponent(id)}.json`;
   const { data } = await fetchJson<{ streams?: RawAddonStream[] }>(endpoint(addon.url, path), {
     timeoutMs: 20000,
   });
   const streams = Array.isArray(data.streams) ? data.streams : [];
   cacheSet(cacheKey, streams, 2 * 60_000);
-  return streams;
+  return usableAddonStreams(streams);
 }
 
 export async function getAddonSubtitles(
@@ -189,7 +220,7 @@ export async function getAddonSubtitles(
   extra: Record<string, string | number | undefined> = {},
 ): Promise<AddonSubtitle[]> {
   const path = `subtitles/${encodeURIComponent(type)}/${encodeURIComponent(id)}${extraPath(extra)}.json`;
-  const cacheKey = `addon:subs:${addon.id}:${path}`;
+  const cacheKey = `addon:subs:${addon.id}:${shortHash(addon.url, 16)}:${path}`;
   const cached = cacheGet<AddonSubtitle[]>(cacheKey);
   if (cached) return cached;
   const { data } = await fetchJson<{ subtitles?: AddonSubtitle[] }>(endpoint(addon.url, path), {

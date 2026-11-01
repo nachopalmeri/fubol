@@ -4,6 +4,7 @@ import { rewritePlaylist } from "@/lib/live/playlist";
 import { noteFailure, noteSuccess } from "@/lib/live/rank";
 import { logger } from "@/lib/logger";
 import { sanitizeUrl } from "@/lib/crypto";
+import { getSession } from "@/lib/auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -22,6 +23,11 @@ export async function GET(request: Request): Promise<Response> {
   const payload = verifyStreamToken(token);
   if (!payload) {
     return Response.json({ error: "Token inválido" }, { status: 401 });
+  }
+  const session = await getSession();
+  if (!session) return Response.json({ error: "No autorizado" }, { status: 401 });
+  if (session.role === "link" && (!payload.k || !session.permissions.includes(payload.k))) {
+    return Response.json({ error: "Sin permiso para esta señal" }, { status: 403 });
   }
 
   const headers = sanitizeHeaders(payload.h) ?? {};
@@ -76,7 +82,7 @@ export async function GET(request: Request): Promise<Response> {
       const value = res.headers.get(name);
       if (value) outHeaders.set(name, value);
     }
-    outHeaders.set("cache-control", "public, max-age=2");
+    outHeaders.set("cache-control", "private, no-store");
     return new Response(res.body, { status: res.status, headers: outHeaders });
   } catch (error) {
     noteFailure(payload.u);

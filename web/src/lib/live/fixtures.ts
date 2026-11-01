@@ -304,7 +304,8 @@ export interface FixtureMatch {
 }
 
 /** Matches a fixture to configured channels using team names and TV station. */
-export function matchFixtureChannels(fixture: Fixture, channels: Channel[]): FixtureMatch {  const teams = [fixture.home, fixture.away]
+export function matchFixtureChannels(fixture: Fixture, channels: Channel[]): FixtureMatch {
+  const teams = [fixture.home, fixture.away]
     .map((team) => normalizeChannelName(team))
     .filter((team) => team.length >= 3);
   const stationTokens = (fixture.tv ?? [])
@@ -312,7 +313,7 @@ export function matchFixtureChannels(fixture: Fixture, channels: Channel[]): Fix
     .filter(Boolean);
 
   const scored = channels.map((channel) => {
-    const name = normalizeChannelName(`${channel.name} ${channel.group}`);
+    const name = normalizeChannelName(channel.name);
     let score = 0;
     for (const team of teams) {
       if (name.includes(team)) score += 45;
@@ -324,11 +325,10 @@ export function matchFixtureChannels(fixture: Fixture, channels: Channel[]): Fix
     for (const station of stationTokens) {
       if (station && (name.includes(station) || station.includes(name))) score += 55;
       else {
-        const tokens = station.split(" ").filter((token) => token.length >= 3);
+        const tokens = station.split(" ").filter((token) => token.length >= 3 && !/^(sports?|deportes|futbol|football|tv|live|hd)$/.test(token));
         if (tokens.some((token) => name.includes(token))) score += 30;
       }
     }
-    if (/deportes|sports|futbol|football/.test(name)) score += 4;
     return { channel, score };
   });
 

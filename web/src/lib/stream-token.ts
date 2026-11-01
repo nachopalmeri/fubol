@@ -45,6 +45,26 @@ export function verifyStreamToken(token: string | null | undefined): StreamToken
   return verifyToken<StreamTokenPayload>(token);
 }
 
+/** Signed URL for the local compatibility relay (re-encodes broken HLS for the browser). */
+export function signRelayUrl(
+  url: string,
+  options: { referer?: string; headers?: Record<string, string>; sourceId?: string; height?: number } = {},
+  ttlMs = 6 * 3600_000,
+): string {
+  const token = signToken(
+    {
+      u: url,
+      ...(options.referer ? { r: options.referer } : {}),
+      ...(options.headers ? { h: sanitizeHeaders(options.headers) } : {}),
+      ...(options.sourceId ? { s: options.sourceId } : {}),
+      k: "live",
+      d: String(options.height ?? 720),
+    },
+    ttlMs,
+  );
+  return `/api/relay/${token}/index.m3u8`;
+}
+
 export function signSubtitleUrl(url: string, ttlMs = 12 * 3600_000): string {
   const token = signToken({ u: url, k: "vod" }, ttlMs);
   return `/api/subtitles/proxy?t=${encodeURIComponent(token)}`;

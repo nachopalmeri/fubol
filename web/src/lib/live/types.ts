@@ -16,6 +16,11 @@ export interface LiveSourceConfig {
   catalogId?: string;
   catalogType?: string;
   referer?: string;
+  /** Optional group label for a single-URL source. */
+  group?: string;
+  /** Re-encode through the local relay when the origin is not browser-compatible. */
+  relay?: boolean;
+  relayHeight?: number;
 }
 
 export interface LiveSource {

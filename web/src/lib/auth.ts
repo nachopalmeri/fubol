@@ -94,7 +94,10 @@ export function baseUrl(request: Request): string {
   const url = new URL(request.url);
   const forwardedHost = request.headers.get("x-forwarded-host");
   const forwardedProto = request.headers.get("x-forwarded-proto");
-  const host = forwardedHost ?? url.host;
+  // Inside the container request.url is built from HOSTNAME (0.0.0.0), which the
+  // browser on the LAN cannot use. The Host header still carries the address the
+  // client actually typed, so prefer it over the bind address.
+  const host = forwardedHost ?? request.headers.get("host") ?? url.host;
   const proto = forwardedProto ?? url.protocol.replace(":", "");
   return `${proto}://${host}`;
 }

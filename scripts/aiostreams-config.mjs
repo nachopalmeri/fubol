@@ -19,6 +19,7 @@ import {
   applyTorboxMode,
   TORBOX_PLACEHOLDER as PLACEHOLDER,
 } from './lib/torbox-mode.mjs';
+import { applySportsManifest } from './lib/sports-manifest.mjs';
 
 const ROOT = process.cwd();
 const ENV_PATH = path.join(ROOT, '.env');
@@ -167,6 +168,7 @@ async function loadConfig(key) {
   } catch (error) {
     fail(error.message);
   }
+  try { applySportsManifest(config, ROOT); } catch (error) { fail(error.message); }
   return config;
 }
 

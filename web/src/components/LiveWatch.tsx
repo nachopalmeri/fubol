@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import Player, { type PlayerSource, type PlayerSubtitle } from "./Player";
 import { IconAlert, IconRefresh, IconSpark } from "./icons";
 
@@ -21,6 +22,7 @@ interface SessionResponse {
 export default function LiveWatch({ channelId }: { channelId: string }) {
   const [data, setData] = useState<SessionResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [setupUrl, setSetupUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [nonce, setNonce] = useState(0);
 
@@ -28,12 +30,19 @@ export default function LiveWatch({ channelId }: { channelId: string }) {
     const controller = new AbortController();
     setLoading(true);
     setError(null);
+    setSetupUrl(null);
     fetch(`/api/live/session?channel=${encodeURIComponent(channelId)}`, {
       signal: controller.signal,
       cache: "no-store",
     })
       .then(async (response) => {
-        const body = (await response.json()) as SessionResponse & { error?: string };
+        const body = (await response.json()) as SessionResponse & { error?: string; code?: string; configureUrl?: string };
+        if (body.code === "source_setup_required" && body.configureUrl && !controller.signal.aborted) {
+          try {
+            const url = new URL(body.configureUrl);
+            if (url.protocol === "https:") setSetupUrl(url.toString());
+          } catch { /* Never render an invalid upstream action URL. */ }
+        }
         if (!response.ok) throw new Error(body.error ?? "No se pudo abrir el canal");
         if (!controller.signal.aborted) setData(body);
       })
@@ -59,13 +68,14 @@ export default function LiveWatch({ channelId }: { channelId: string }) {
     );
   }
 
-  if (error || !data) {
+  if (error || !data || data.sources.length === 0) {
     return (
       <div className="empty-state">
         <IconAlert size={30} />
-        <h2>No pudimos abrir la señal</h2>
-        <p>{error ?? "El canal no está disponible ahora."}</p>
-        <button className="btn btn-primary" onClick={retry}>
+        <h2>{setupUrl ? "La fuente necesita actualizarse" : "No pudimos abrir la señal"}</h2>
+        <p>{error ?? (data?.notes.join(" · ") || "El canal no está disponible ahora.")}</p>
+        {setupUrl && <div className="page-actions"><a className="btn btn-primary" href={setupUrl} target="_blank" rel="noopener noreferrer">Configurar proveedor ↗</a><Link className="btn btn-ghost" href="/admin?tab=sources">Actualizar manifest</Link></div>}
+        <button className="btn btn-ghost" onClick={retry}>
           <IconRefresh size={16} /> Reintentar
         </button>
       </div>

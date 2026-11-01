@@ -34,11 +34,11 @@ export default function TitleHero({
 
   return (
     <section className="title-hero">
-      <div className="title-poster" style={{ display: "grid", placeItems: "center" }}>
+      <div className="title-poster">
         {poster ? (
           <img src={poster} alt="" referrerPolicy="no-referrer" />
         ) : (
-          <span style={{ fontSize: 42, fontWeight: 800, color: "var(--muted)" }}>{initials(name)}</span>
+          <span className="title-poster-fallback" aria-hidden="true">{initials(name)}</span>
         )}
       </div>
       <div className="title-copy">

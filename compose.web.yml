@@ -1,0 +1,37 @@
+# Independent web deployment: no AIOStreams secrets or unrelated profiles required.
+# docker compose -f compose.web.yml up -d --build
+services:
+  fubol:
+    build:
+      context: ./web
+    container_name: fubol-web
+    restart: unless-stopped
+    init: true
+    ports:
+      - "${FUBOL_WEB_BIND:-0.0.0.0}:${FUBOL_WEB_PORT:-3001}:3001"
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      HOSTNAME: 0.0.0.0
+      FUBOL_DATA_DIR: /data
+      FUBOL_BASE_URL: ${FUBOL_BASE_URL:-}
+      FUBOL_ADMIN_PASSWORD: ${FUBOL_ADMIN_PASSWORD:-}
+      FUBOL_SECRET: ${FUBOL_SECRET:-}
+      # Fubol must reach the user's own AIOStreams container on the private
+      # compose network. Addon/source creation stays admin-only.
+      FUBOL_ALLOW_PRIVATE_SOURCES: ${FUBOL_ALLOW_PRIVATE_SOURCES:-1}
+      FUBOL_OPEN_FILMS: ${FUBOL_OPEN_FILMS:-0}
+      TZ: America/Argentina/Buenos_Aires
+    volumes:
+      - ./data/fubol:/data
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

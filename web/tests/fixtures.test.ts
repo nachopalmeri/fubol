@@ -140,4 +140,12 @@ describe("agenda helpers", () => {
     expect(match.channels).toHaveLength(0);
     expect(match.score).toBe(0);
   });
+  it("does not associate unrelated sports channels merely because they have a sports group", () => {
+    const match = matchFixtureChannels(fixture({ home: "Santos", away: "Palmeiras", tv: [] }), [
+      channel("Sky Sports Premier League", "Football"),
+      channel("Panathinaikos vs Aris", "Sports Streams"),
+    ]);
+    expect(match.channels).toEqual([]);
+    expect(match.score).toBe(0);
+  });
 });

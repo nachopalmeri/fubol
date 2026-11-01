@@ -3,6 +3,7 @@
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type HlsType from "hls.js";
+import LearningPanel from "./LearningPanel";
 import { cuesToVtt, parseCues } from "@/lib/subs/format";
 import {
   IconAlert,
@@ -29,6 +30,8 @@ export interface PlayerSource {
   score?: number;
   edgeAgeS?: number | null;
   height?: number | null;
+  /** Same-upload caption assets, not a claim of perfect human-verified alignment. */
+  matchedSubtitleIds?: string[];
 }
 
 export interface PlayerSubtitle {
@@ -120,6 +123,7 @@ export default function Player({
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
   const [syncBusy, setSyncBusy] = useState(false);
   const [seekHint, setSeekHint] = useState<string | null>(null);
+  const [learningOpen, setLearningOpen] = useState(false);
 
   indexRef.current = sourceIndex;
   const source = sources[sourceIndex];
@@ -351,11 +355,12 @@ export default function Player({
 
   /* ------------------------------ subtitles ----------------------------- */
   useEffect(() => {
-    if (subTouchedRef.current || activeSub) return;
+    if (subTouchedRef.current) return;
+    const matched = subtitles.find((track) => source?.matchedSubtitleIds?.includes(track.id));
     const spanish = subtitles.find((track) => track.lang === "es" && !/forced|forzado/i.test(track.label));
-    if (spanish) setActiveSub(spanish.id);
-    else if (subtitles[0]) setActiveSub(subtitles[0].id);
-  }, [subtitles, activeSub]);
+    const preferred = matched ?? spanish ?? subtitles[0];
+    if (preferred && preferred.id !== activeSub) setActiveSub(preferred.id);
+  }, [subtitles, activeSub, source?.id, source?.matchedSubtitleIds]);
 
   useEffect(() => {
     if (activeSub) {
@@ -691,6 +696,7 @@ export default function Player({
   const qualityOpen = panel === "quality";
 
   return (
+    <>
     <div
       className="player"
       ref={containerRef}
@@ -1021,5 +1027,12 @@ export default function Player({
         )}
       </div>
     </div>
+    {mode === "vod" && <div className="learning-wrapper">
+      <button type="button" className="btn btn-ghost btn-sm" aria-expanded={learningOpen} onClick={() => setLearningOpen((open) => !open)}>
+        {learningOpen ? "Close English practice" : "Learn English"}
+      </button>
+      {learningOpen && <LearningPanel title={title ?? "Untitled"} storageKey={storageKey} subtitles={subtitles} current={current} activeSubtitleId={activeSub} activeSubtitleOffsetMs={offsetMs} video={videoRef.current} />}
+    </div>}
+    </>
   );
 }

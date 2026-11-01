@@ -126,6 +126,7 @@ export default function VodWatch({
     note: source.note,
     score: source.score,
     height: source.height,
+    matchedSubtitleIds: source.matchedSubtitleIds,
   }));
 
   const subtitles: PlayerSubtitle[] = data.subtitles.map((track) => ({
@@ -183,9 +184,9 @@ export default function VodWatch({
       </div>
 
       <p className="watch-note">
-        Los subtítulos se activan solos en español (VOSE). Podés cambiarlos, ajustar el offset o
-        sincronizarlos desde el botón CC del reproductor. Si el archivo es MKV, el navegador puede
-        necesitar unos segundos extra.
+        Si existe una pista de esta misma copia, se prioriza sobre pistas externas; de lo contrario
+        se prefiere español. Podés cambiarla y ajustar el tiempo desde CC. Las pistas automáticas
+        ASR pueden contener errores y las de otra edición pueden necesitar otro ajuste.
       </p>
     </div>
   );

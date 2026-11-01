@@ -11,6 +11,9 @@ import {
 } from "../addons";
 import { listAddonRows, type AddonRow } from "./store";
 import { dedupeSources, normalizeStreams, type VodSource } from "./rank";
+import { filterAvailable, validateVodSource } from "./availability";
+import { shortHash } from "../crypto";
+import { getOpenFilm, getOpenFilmMetas, OPEN_FILM_ADDON, openFilmsEnabled } from "./open-films";
 
 const BLOCKED = /(xxx|adult|porn|erotic|hentai)/i;
 
@@ -20,15 +23,23 @@ export interface HomeRow {
   metas: AddonMetaPreview[];
 }
 
-async function manifestsFor(addons: AddonRow[]) {
+async function manifestsFor(addons: AddonRow[], timeoutMs = 4_000) {
   const results = await Promise.allSettled(
-    addons.map(async (addon) => ({ addon, manifest: await getManifest(addon.url) })),
+    addons.map(async (addon) => ({
+      addon,
+      manifest: await withTimeout(getManifest(addon.url), timeoutMs, "manifest lento"),
+    })),
   );
   return results.flatMap((result) => (result.status === "fulfilled" ? [result.value] : []));
 }
 
+/** Catalogs only need providers that can publish movies or series, not subtitle addons. */
+function catalogAddons(): AddonRow[] {
+  return listAddonRows().filter((addon) => addon.kind === "vod" || addon.kind === "meta");
+}
+
 export async function getHomeRows(maxRows = 10): Promise<HomeRow[]> {
-  const addons = listAddonRows();
+  const addons = catalogAddons();
   const withManifests = await manifestsFor(addons);
   const tasks: { addon: AddonRow; catalog: AddonCatalog }[] = [];
   for (const { addon, manifest } of withManifests) {
@@ -45,7 +56,7 @@ export async function getHomeRows(maxRows = 10): Promise<HomeRow[]> {
     try {
       const metas = await withTimeout(
         getCatalog(addon, catalog.type, catalog.id),
-        9000,
+        6000,
         "catálogo lento",
       );
       if (metas.length === 0) return null;
@@ -56,7 +67,8 @@ export async function getHomeRows(maxRows = 10): Promise<HomeRow[]> {
   });
 
   const seen = new Set<string>();
-  const out: HomeRow[] = [];
+  const openMetas = await getOpenFilmMetas();
+  const out: HomeRow[] = openMetas.length ? [{ addon: OPEN_FILM_ADDON, catalog: { id: "open-films", type: "movie", name: "Cine abierto · Internet Archive" }, metas: openMetas }] : [];
   for (const row of rows) {
     if (!row) continue;
     const key = `${row.catalog.type}:${row.catalog.name}`;
@@ -65,7 +77,20 @@ export async function getHomeRows(maxRows = 10): Promise<HomeRow[]> {
     out.push(row);
     if (out.length >= maxRows) break;
   }
-  return out;
+  const available = await filterAvailable(
+    [...new Map(out.flatMap((row) => row.metas).map((meta) => [`${meta.type}:${meta.id}`, meta])).values()].slice(0, 48),
+    providerRevision(),
+    { streams: getPlayableVodStreams, meta: getVodMeta },
+    6_000,
+  );
+  const availableById = new Map(available.map((meta) => [`${meta.type}:${meta.id}`, meta]));
+  return out.map((row) => ({
+    ...row,
+    metas: row.metas.flatMap((meta) => {
+      const ready = availableById.get(`${meta.type}:${meta.id}`);
+      return ready ? [ready] : [];
+    }),
+  })).filter((row) => row.metas.length > 0);
 }
 
 export interface SearchResult {
@@ -74,10 +99,11 @@ export interface SearchResult {
   addonName: string;
 }
 
-export async function searchVod(query: string): Promise<SearchResult[]> {
+export async function searchVod(query: string, timeoutMs = 10_000): Promise<SearchResult[]> {
   const trimmed = query.trim();
   if (trimmed.length < 2) return [];
-  const addons = listAddonRows();
+  const deadline = Date.now() + timeoutMs;
+  const addons = catalogAddons();
   const withManifests = await manifestsFor(addons);
   const tasks: { addon: AddonRow; type: string; catalogId: string }[] = [];
 
@@ -95,10 +121,12 @@ export async function searchVod(query: string): Promise<SearchResult[]> {
   }
 
   const results = await mapLimit(tasks, 4, async (task) => {
+    const remaining = deadline - Date.now();
+    if (remaining <= 500) return [] as AddonMetaPreview[];
     try {
       return await withTimeout(
         getCatalog(task.addon, task.type, task.catalogId, { search: trimmed }),
-        12000,
+        Math.min(8_000, remaining - 250),
         "búsqueda lenta",
       );
     } catch {
@@ -107,7 +135,9 @@ export async function searchVod(query: string): Promise<SearchResult[]> {
   });
 
   const seen = new Set<string>();
-  const merged: SearchResult[] = [];
+  const openMetas = await getOpenFilmMetas(trimmed);
+  const merged: SearchResult[] = openMetas.map((meta) => ({ meta, addonId: OPEN_FILM_ADDON.id, addonName: OPEN_FILM_ADDON.name }));
+  for (const meta of openMetas) seen.add(`${meta.type}:${meta.id}`);
   for (let index = 0; index < results.length; index++) {
     const task = tasks[index];
     if (!task) continue;
@@ -120,18 +150,35 @@ export async function searchVod(query: string): Promise<SearchResult[]> {
   }
 
   const needle = trimmed.toLowerCase();
-  return merged
+  const ordered = merged
     .sort((a, b) => {
       const aExact = a.meta.name.toLowerCase() === needle ? 0 : 1;
       const bExact = b.meta.name.toLowerCase() === needle ? 0 : 1;
       if (aExact !== bExact) return aExact - bExact;
       return a.meta.name.localeCompare(b.meta.name);
     })
-    .slice(0, 48);
+    .slice(0, 144);
+  const available = await filterAvailable(
+    ordered.map((result) => result.meta),
+    providerRevision(),
+    { streams: getPlayableVodStreams, meta: getVodMeta },
+    Math.max(1_000, deadline - Date.now() - 250),
+  );
+  const byId = new Map(available.map((meta) => [`${meta.type}:${meta.id}`, meta]));
+  return ordered.flatMap((result) => {
+    const meta = byId.get(`${result.meta.type}:${result.meta.id}`);
+    return meta ? [{ ...result, meta }] : [];
+  }).slice(0, 48);
+}
+
+function providerRevision(): string {
+  return shortHash(JSON.stringify([openFilmsEnabled(), ...listAddonRows("vod").map((addon) => [addon.id, addon.url])]), 16);
 }
 
 export async function getVodMeta(type: string, id: string): Promise<AddonMeta | null> {
-  const addons = listAddonRows();
+  const openFilm = type === "movie" ? await getOpenFilm(id) : null;
+  if (openFilm) return openFilm.meta;
+  const addons = catalogAddons();
   const withManifests = await manifestsFor(addons);
   const ordered = withManifests
     .filter(({ manifest }) => supports(manifest, "meta"))
@@ -153,6 +200,7 @@ export interface VodStreamsResult {
 }
 
 export async function getVodStreams(type: string, id: string): Promise<VodStreamsResult> {
+  const openFilm = type === "movie" ? await getOpenFilm(id) : null;
   const addons = listAddonRows("vod");
   const results = await mapLimit(addons, 5, async (addon) => {
     try {
@@ -165,14 +213,27 @@ export async function getVodStreams(type: string, id: string): Promise<VodStream
     }
   });
   return {
-    sources: dedupeSources(results.flat()).slice(0, 40),
-    addonsTried: addons.length,
+    sources: dedupeSources([...(openFilm?.sources ?? []), ...results.flat()]).slice(0, 40),
+    addonsTried: addons.length + (openFilm ? 1 : 0),
   };
 }
 
 export interface SubtitleProvider {
   addon: AddonRow;
   manifestName: string;
+}
+
+export async function getPlayableVodStreams(type: string, id: string): Promise<VodStreamsResult & { kinds: Record<string, "hls" | "mp4"> }> {
+  const result = await getVodStreams(type, id);
+  const inspected = await mapLimit(result.sources.slice(0, 6), 3, async (source) => ({ source, kind: await validateVodSource(source) }));
+  const kinds: Record<string, "hls" | "mp4"> = {};
+  const sources: VodSource[] = [];
+  for (const item of inspected) {
+    if (!item.kind) continue;
+    sources.push(item.source);
+    kinds[item.source.id] = item.kind;
+  }
+  return { ...result, sources, kinds };
 }
 
 export async function subtitleProviders(): Promise<SubtitleProvider[]> {

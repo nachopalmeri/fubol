@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updated": "2026-10-27",
+  "updated": "2026-10-28",
   "policy": "Solo addons oficiales, open source o configurables. Los scrapers P2P figuran como 'gray': su codigo puede ser abierto, pero el contenido que indexan puede no estar licenciado. Fubol no aloja, scrapea ni reemite streams. La licencia 'verificar' significa que el addon se distribuye como servicio hosted y no se encontro un repo publico con licencia; no asumir que es open source.",
   "addons": [
     {
@@ -118,7 +118,20 @@
       "license": "verificar",
       "risk": "official",
       "resources": ["subtitles"],
-      "note": "El mas completo para ES/EN. Ya integrado como preset opensubtitles-v3-plus."
+      "note": "Manifest disponible; la consulta directa de subtitulos devolvio HTTP 500 el 2026-10-28. No confundir con el preset opensubtitles-v3-plus de AIOStreams."
+    },
+    {
+      "id": "opensubtitles-v3",
+      "name": "OpenSubtitles v3",
+      "category": "subtitles",
+      "kind": "remote",
+      "install": "https://opensubtitles-v3.strem.io/manifest.json",
+      "manifest": "https://opensubtitles-v3.strem.io/manifest.json",
+      "config": null,
+      "license": "verificar",
+      "risk": "official",
+      "resources": ["subtitles"],
+      "note": "Conectado a Fubol web. El 2026-10-28 devolvio 37 pistas para tt0111161, 3 ES; descarga ES y conversion WebVTT HTTP 200. La sincronizacion con video real sigue pendiente."
     },
     {
       "id": "subsource",

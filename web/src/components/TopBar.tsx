@@ -10,6 +10,7 @@ import {
   IconLogout,
   IconSearch,
   IconSeries,
+  IconSpark,
   IconSettings,
   IconTv,
 } from "./icons";
@@ -19,6 +20,7 @@ const NAV = [
   { href: "/live", label: "En vivo", icon: IconTv },
   { href: "/peliculas", label: "Películas", icon: IconFilm },
   { href: "/series", label: "Series", icon: IconSeries },
+  { href: "/aprender", label: "Aprender", icon: IconSpark },
 ];
 
 export default function TopBar({ isAdmin, label }: { isAdmin: boolean; label: string }) {

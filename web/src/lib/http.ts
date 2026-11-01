@@ -133,19 +133,35 @@ export async function fetchUpstream(
       ...options.headers,
     });
     if (options.range) headers.set("range", options.range);
-    const res = await fetch(url, {
-      method: options.method ?? "GET",
-      headers,
-      body: options.body,
-      redirect: "follow",
-      signal: controller.signal,
-      cache: "no-store",
-    });
-    // A public host could redirect to a private one.
-    if (res.url && res.url !== url.toString()) {
-      await assertSafeUrl(res.url);
+    let target = url;
+    let method = options.method ?? "GET";
+    let body = options.body;
+    for (let redirects = 0; ; redirects++) {
+      const res = await fetch(target, {
+        method,
+        headers,
+        body,
+        redirect: "manual",
+        signal: controller.signal,
+        cache: "no-store",
+      });
+      const location = res.headers.get("location");
+      if (![301, 302, 303, 307, 308].includes(res.status) || !location) {
+        return { res, finalUrl: res.url || target.toString(), ms: Date.now() - started };
+      }
+      await res.body?.cancel();
+      if (redirects >= (options.maxRedirects ?? 5)) throw new UpstreamError("Demasiadas redirecciones", 502);
+      const next = await assertSafeUrl(new URL(location, target).toString());
+      if (target.origin !== next.origin) {
+        headers.delete("authorization");
+        headers.delete("cookie");
+      }
+      if (res.status === 303 || ((res.status === 301 || res.status === 302) && method === "POST")) {
+        method = "GET";
+        body = undefined;
+      }
+      target = next;
     }
-    return { res, finalUrl: res.url || url.toString(), ms: Date.now() - started };
   } catch (error) {
     if (error instanceof UpstreamError) throw error;
     if (controller.signal.aborted) throw new UpstreamError("Timeout del origen", 504);
