@@ -59,6 +59,30 @@ Link and authorization path over the LAN address:
 Cold start after a container restart: playlist in 1.35 s, `init.mp4` in 125 ms,
 first segment in 130 ms.
 
+### Player: hls.js instead of the browser's native HLS
+
+Bundled Chromium reports native HLS support for these `application/vnd.apple.mpegurl`
+URLs, so the player silently took the native path: video played, but the latency
+chip, "Ir al vivo", level switching and the hls.js retry hooks never existed.
+The player now prefers hls.js whenever Media Source Extensions are available and
+keeps native HLS only as the iOS Safari fallback. `lowLatencyMode` was also
+turned off: the relay playlist is regular HLS with 1 s segments, and the
+low-latency catch-up loop cost about 11% of frames.
+
+Final run on the delivered link (family session, LAN address, Chromium):
+
+| t (s) | resolution | currentTime | frames | dropped | latency chip |
+| --- | --- | --- | --- | --- | --- |
+| 15 | 1280×720 | 18.5 | 905 | 1 | 3 s |
+| 35 | 1280×720 | 40.5 | 2 000 | 2 | 2 s |
+| 55 | 1280×720 | 59.7 | 3 023 | 6 | 1 s |
+| 75 | 1280×720 | 79.6 | 3 977 | 6 | 3 s |
+| 90 | 1280×720 | 94.5 | 4 866 | 6 | 2 s |
+
+First frame at 4.1 s, 0.12% dropped frames, no console or network errors. The
+latency chip is measured against the relay's live edge, so it excludes the delay
+the broadcaster already had before the relay read it.
+
 Network readiness: the container publishes `0.0.0.0:3001`, the active profile is
 Public, "Docker Desktop Backend" inbound allow rules exist, and AC/DC sleep and
 hibernate timeouts are 0.

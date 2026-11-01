@@ -206,7 +206,14 @@ export default function Player({
       }
 
       const nativeHls = video.canPlayType("application/vnd.apple.mpegurl") !== "";
-      if (nativeHls) {
+      const mod = await import("hls.js");
+      if (cancelled) return;
+      const Hls = mod.default;
+      // Prefer hls.js whenever Media Source Extensions exist: only there we can
+      // show the latency readout, offer "Ir al vivo", switch levels and run the
+      // retry/failover hooks. Native HLS remains the fallback for iOS Safari,
+      // where MSE is unavailable.
+      if (!Hls.isSupported() && nativeHls) {
         video.src = sourceUrl;
         try {
           if (mode === "live") {
@@ -221,10 +228,6 @@ export default function Player({
         play();
         return;
       }
-
-      const mod = await import("hls.js");
-      if (cancelled) return;
-      const Hls = mod.default;
       if (!Hls.isSupported()) {
         setStatus("error");
         setError("Este navegador no soporta HLS. Probá con Chrome, Edge o Safari.");
@@ -232,13 +235,16 @@ export default function Player({
       }
 
       hls = new Hls({
-        lowLatencyMode: mode === "live",
-        liveSyncDurationCount: 1,
-        liveMaxLatencyDurationCount: 4,
-        maxLiveSyncPlaybackRate: 1.5,
+        // The relay playlist is regular HLS with 1 s segments, not LL-HLS.
+        // lowLatencyMode forces aggressive catch-up on non-LL playlists and
+        // costs frames; keep it off and stay near the edge with liveSync.
+        lowLatencyMode: false,
+        liveSyncDurationCount: mode === "live" ? 2 : 1,
+        liveMaxLatencyDurationCount: mode === "live" ? 5 : 4,
+        maxLiveSyncPlaybackRate: 1.08,
         backBufferLength: mode === "live" ? 0 : 90,
-        maxBufferLength: mode === "live" ? 6 : 30,
-        maxMaxBufferLength: mode === "live" ? 10 : 60,
+        maxBufferLength: mode === "live" ? 8 : 30,
+        maxMaxBufferLength: mode === "live" ? 12 : 60,
         startFragPrefetch: true,
         testBandwidth: false,
         enableWorker: true,
@@ -320,13 +326,21 @@ export default function Player({
       const hls = hlsRef.current;
       if (!video) return;
       let value: number | null = null;
-      if (hls) {
-        const reported = (hls as unknown as { latency?: number }).latency;
-        if (typeof reported === "number" && Number.isFinite(reported) && reported >= 0) value = reported;
-        else if (typeof hls.liveSyncPosition === "number") value = hls.liveSyncPosition - video.currentTime;
+      const reported = hls ? (hls as unknown as { latency?: number }).latency : undefined;
+      if (typeof reported === "number" && Number.isFinite(reported) && reported >= 0) {
+        value = reported;
+      } else if (hls && typeof hls.liveSyncPosition === "number" && Number.isFinite(hls.liveSyncPosition)) {
+        value = hls.liveSyncPosition - video.currentTime;
       } else if (video.seekable.length > 0) {
+        // Native playback (iOS Safari) and some browsers expose no latency
+        // through hls.js; the seekable edge is the live edge there.
         const edge = video.seekable.end(video.seekable.length - 1);
-        value = edge - video.currentTime;
+        if (Number.isFinite(edge)) value = edge - video.currentTime;
+      } else if (video.buffered.length > 0) {
+        // Last resort: distance from the newest buffered media. Close to the
+        // live edge for a live playlist, so it still beats hiding the chip.
+        const edge = video.buffered.end(video.buffered.length - 1);
+        if (Number.isFinite(edge)) value = edge - video.currentTime;
       }
       if (value !== null) setLatency(Math.max(0, Math.round(value * 10) / 10));
 
