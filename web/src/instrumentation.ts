@@ -25,6 +25,20 @@ export async function register(): Promise<void> {
   }
   logger.info("fubol_boot", { dataDir, serverless });
 
+  // The torrent resolver can be pointed at a different host from the panel;
+  // the setting has to be in memory before the first stream is normalized.
+  void (async () => {
+    try {
+      const [{ getSetting }, { setTorrentServerBase }] = await Promise.all([
+        import("./lib/state/settings"),
+        import("./lib/vod/torrent"),
+      ]);
+      setTorrentServerBase(await getSetting("torrentServer"));
+    } catch (error) {
+      logger.warn("torrent_server_setting_failed", { error });
+    }
+  })();
+
   // Warm the catalog behind the boot so the first visitor does not pay for it.
   // Building the home rows validates availability across every VOD provider
   // and takes about six seconds on an empty cache; afterwards it is served

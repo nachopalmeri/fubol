@@ -189,6 +189,9 @@ export default function AdminPanel({ initialTab = "links" }: { initialTab?: Admi
         setAddons(data.addons);
         const diag = await request<{ addons: AddonDiagnostic[] }>("/api/admin/addons/diagnostics");
         setDiagnostics(diag.addons);
+        const resolver = await request<{ url: string | null; enabled: boolean }>("/api/admin/torrent-server");
+        setTorrentServerUrl(resolver.url ?? "");
+        setTorrentServerState((current) => current ?? { url: resolver.url });
       } else {
         const data = await request<HealthData>("/api/admin/health");
         setHealth(data);
@@ -425,6 +428,87 @@ export default function AdminPanel({ initialTab = "links" }: { initialTab?: Admi
   const [addonUrl, setAddonUrl] = useState("");
   const [addonKind, setAddonKind] = useState<AddonKind>("vod");
   const [addonName, setAddonName] = useState("");
+  const [debridProvider, setDebridProvider] = useState("torbox");
+  const [debridToken, setDebridToken] = useState("");
+  const [debridResult, setDebridResult] = useState<{
+    ok: boolean;
+    direct: number;
+    p2p: number;
+    masked: string;
+    error?: string;
+  } | null>(null);
+  const [torrentServerUrl, setTorrentServerUrl] = useState("");
+  const [torrentServerState, setTorrentServerState] = useState<{
+    url: string | null;
+    reachable?: boolean;
+    detail?: string;
+  } | null>(null);
+
+  const saveTorrentServer = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      const data = await request<{ ok: boolean; url: string | null; reachable?: boolean; detail?: string }>(
+        "/api/admin/torrent-server",
+        { method: "POST", body: JSON.stringify({ url: torrentServerUrl.trim() }) },
+      );
+      setTorrentServerState(data);
+      if (data.url) setTorrentServerUrl(data.url);
+      flash(data.url ? "Resolver de torrents guardado" : "Resolver de torrents apagado");
+      await refresh("addons");
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "No se pudo guardar el resolver");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const DEBRID_PROVIDERS = [
+    { id: "torbox", label: "TorBox" },
+    { id: "realdebrid", label: "Real-Debrid" },
+    { id: "premiumize", label: "Premiumize" },
+    { id: "alldebrid", label: "AllDebrid" },
+    { id: "debridlink", label: "DebridLink" },
+    { id: "easydebrid", label: "EasyDebrid" },
+    { id: "offcloud", label: "Offcloud" },
+    { id: "putio", label: "Put.io" },
+    { id: "highway", label: "Highway" },
+  ];
+
+  const runDebrid = async (apply: boolean) => {
+    setBusy(true);
+    setError(null);
+    setDebridResult(null);
+    try {
+      const data = await request<{
+        ok: boolean;
+        direct: number;
+        p2p: number;
+        masked: string;
+        error?: string;
+      }>("/api/admin/debrid", {
+        method: "POST",
+        body: JSON.stringify({ provider: debridProvider, token: debridToken, apply }),
+      });
+      setDebridResult(data);
+      if (data.ok && apply) {
+        flash("Addon de streams configurado");
+        setDebridToken("");
+        await refresh("addons");
+      }
+    } catch (reason) {
+      setDebridResult({
+        ok: false,
+        direct: 0,
+        p2p: 0,
+        masked: "",
+        error: reason instanceof Error ? reason.message : "No se pudo probar el token",
+      });
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const submitAddon = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -1103,6 +1187,104 @@ export default function AdminPanel({ initialTab = "links" }: { initialTab?: Admi
               </div>
               <button className="btn btn-primary" type="submit" disabled={busy}>
                 <IconPlus size={16} /> Agregar addon
+              </button>
+            </form>
+
+            <form
+              className="panel-body"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void runDebrid(false);
+              }}
+            >
+              <h3 style={{ marginTop: 8 }}>Resolver P2P con tu cuenta</h3>
+              <p className="muted" style={{ marginTop: 0 }}>
+                Torrentio, Comet y MediaFusion devuelven torrents, no archivos. Con el token de un
+                servicio de descarga (debrid) los mismos addons devuelven links directos y el
+                navegador los reproduce.
+              </p>
+              <div className="field">
+                <label htmlFor="debrid-provider">Servicio</label>
+                <select
+                  id="debrid-provider"
+                  className="select"
+                  value={debridProvider}
+                  onChange={(event) => setDebridProvider(event.target.value)}
+                >
+                  {DEBRID_PROVIDERS.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="field">
+                <label htmlFor="debrid-token">Token / API key</label>
+                <input
+                  id="debrid-token"
+                  className="input"
+                  type="password"
+                  value={debridToken}
+                  onChange={(event) => setDebridToken(event.target.value)}
+                  autoComplete="off"
+                  placeholder="Se guarda solo en el manifest del addon"
+                />
+              </div>
+              {debridResult && (
+                <div className={debridResult.ok ? "form-ok" : "form-error"}>
+                  {debridResult.error
+                    ? debridResult.error
+                    : debridResult.ok
+                      ? `Token válido: ${debridResult.direct} link(s) directo(s) para el título de prueba (${debridResult.masked})`
+                      : `El token no devolvió links directos: ${debridResult.direct} directos, ${debridResult.p2p} torrents. Revisá que el plan tenga descargas.`}
+                </div>
+              )}
+              <div className="field-row">
+                <button className="btn btn-ghost" type="submit" disabled={busy || !debridToken}>
+                  Probar token
+                </button>
+                <button
+                  className="btn btn-primary"
+                  type="button"
+                  disabled={busy || !debridToken}
+                  onClick={() => void runDebrid(true)}
+                >
+                  Guardar en Torrentio
+                </button>
+              </div>
+            </form>
+
+            <form className="panel-body" onSubmit={saveTorrentServer}>
+              <h3 style={{ marginTop: 8 }}>Resolver de torrents (Stremio server)</h3>
+              <p className="muted" style={{ marginTop: 0 }}>
+                Alternativa gratis al debrid: un servicio de streaming que se une al enjambre y
+                re-sirve el archivo por HTTP. Con él, los <code>infoHash</code> de Torrentio, Comet
+                y MediaFusion se vuelven links reproducibles.
+              </p>
+              <div className="field">
+                <label htmlFor="torrent-server-url">URL del resolver</label>
+                <input
+                  id="torrent-server-url"
+                  className="input"
+                  value={torrentServerUrl}
+                  onChange={(event) => setTorrentServerUrl(event.target.value)}
+                  placeholder="http://stremio-server:11470"
+                  spellCheck={false}
+                />
+                <small>
+                  Sólo se guarda la dirección; la app proxya el tráfico, así que el resolver no
+                  necesita estar expuesto a internet si la app corre en la misma red.
+                </small>
+              </div>
+              {torrentServerState?.url && (
+                <div className={torrentServerState.reachable === false ? "form-error" : "form-ok"}>
+                  {torrentServerState.reachable === false
+                    ? `No se pudo contactar el resolver (${torrentServerState.detail ?? "sin respuesta"}).`
+                    : `Resolver activo: ${torrentServerState.url}`}
+                </div>
+              )}
+              <button className="btn btn-ghost" type="submit" disabled={busy}>
+                Guardar y probar
               </button>
             </form>
           </aside>

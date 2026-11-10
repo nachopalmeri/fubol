@@ -72,6 +72,12 @@ export interface AddonMetaPreview {
   /** Set by local source validation, never trusted from an upstream catalog. */
   playableId?: string;
   availabilityCheckedAt?: number;
+  /**
+   * Torrent sources the providers offered for this title. A browser cannot
+   * open them without a resolver (debrid), but the title exists and its
+   * sources are real: hiding it would leave the catalog empty.
+   */
+  p2p?: number;
 }
 
 export interface AddonMeta extends AddonMetaPreview {

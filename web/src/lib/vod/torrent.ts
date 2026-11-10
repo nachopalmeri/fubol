@@ -17,7 +17,23 @@
 /** Base URL of the streaming server, e.g. http://stremio-server:11470 */
 export function torrentServerBase(): string | undefined {
   const value = process.env.FUBOL_TORRENT_SERVER?.trim();
-  return value ? value.replace(/\/+$/, "") : undefined;
+  if (value) return value.replace(/\/+$/, "");
+  return overrideBase;
+}
+
+/**
+ * Runtime override, set from the panel.
+ *
+ * The resolver is the piece that turns a torrent into bytes, and where it
+ * lives changes with the deployment: a container next to the app on the LAN,
+ * or a public instance when the app runs on Vercel. Keeping it in the state
+ * lets the admin point the app at it without a redeploy, which the
+ * environment variable could not do.
+ */
+let overrideBase: string | undefined;
+
+export function setTorrentServerBase(value: string | undefined): void {
+  overrideBase = value?.trim() ? value.trim().replace(/\/+$/, "") : undefined;
 }
 
 export function torrentResolverEnabled(): boolean {

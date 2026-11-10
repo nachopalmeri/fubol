@@ -211,3 +211,32 @@ delay del origen medido y mostrado.
   addon devuelve `infoHash` y el navegador no lo puede abrir. El manifest
   personal de AIOStreams que hay en `.secrets/` apunta a la IP de la LAN
   (`192.168.0.122`), que no es alcanzable desde Vercel.
+
+### 6.5 Addons, catalogo y como queda la reproduccion
+
+Estado medido en el deploy el 2026-11-10 (no proyectado):
+
+- **14 addons instalados**: 4 de metadata, 6 de subtitulos, 4 de streams
+  (Torrentio, Comet, MediaFusion, Meteor). Es todo lo del catalogo del repo que
+  se puede instalar sin credenciales.
+- **186 canales vivos** en 14 categorias (Live Now, Today, Football, Basketball,
+  American Football, Hockey, Baseball, Motorsport, Fight, Tennis, Rugby, Golf,
+  Billiards, AFL, Cricket, Other): los 17 catalogos del addon de deportes
+  importados como fuentes. Antes solo se usaban 2 catalogos (43 canales).
+- **Catalogo VOD completo**: los cuatro addons de streams responden, y el
+  filtro de disponibilidad dejo de borrar los titulos que solo existen como
+  torrent. Ahora se listan con el conteo real de fuentes. The Matrix: 1372
+  fuentes P2P; la pagina del titulo explica que hacen falta para abrirlas.
+- **Reproduccion**: los cuatro addons de streams devuelven 0 URLs HTTP y solo
+  `infoHash`. Un navegador no abre un torrent, asi que hace falta una de estas
+  dos piezas, ambas resueltas desde el panel sin tocar codigo:
+  1. **Token de debrid**: el panel arma el manifest configurado de Torrentio
+     (`https://torrentio.strem.fun/<proveedor>=<token>/manifest.json`), lo
+     prueba contra un titulo real y informa si devolvio links directos.
+  2. **Stremio server** (resolver de torrents): la URL se guarda en el estado
+     y la app proxya el trafico. Es el mecanismo que usan Stremio y Nuvio; el
+     contrato queda fijado en `web/tests/torrent-resolver.test.ts`.
+- **Lo que no se puede resolver desde Vercel**: el resolver es un proceso de
+  larga vida con conexion al enjambre, asi que no puede vivir dentro de una
+  funcion. Va en un contenedor propio (la red de casa o un host con IP fija) y
+  la app lo llama por HTTP.

@@ -2,6 +2,17 @@
 
 Actualizado: 2026-11-10
 
+## Catálogo completo y addons (2026-11-10, tarde)
+- [x] **14 addons instalados** en producción: Cinemeta, AIO Metadata, TMDB Addon, WatchHub (metadata) · OpenSubtitles v3, OpenSubtitles PRO, SubSource, SubDL, Stremio Community Subtitles, SubSense (subtítulos) · Torrentio, Comet, MediaFusion, Meteor (streams). Es todo lo del catálogo de `config/addons/catalog.json` salvo lo que necesita tu cuenta o tu red (AIOStreams propio, LPF Play, FIFA+, UEFA.tv).
+- [x] **Los 17 catálogos deportivos del addon importados** como fuentes vivas (antes solo 2): Live Now, Today, Football, Basketball, American Football, Hockey, Baseball, Motor Sports, Fight, Tennis, Rugby, Golf, Billiards, AFL, Darts, Cricket, Other. **186 canales** navegables (antes 43), con sus grupos en el browser.
+- [x] **El catálogo VOD dejó de estar vacío**: los títulos que los proveedores solo ofrecen como torrent ya no se ocultan. Aparecen con el conteo real de fuentes (`P2P` en la póster) y la página del título explica que hace falta un resolver. Antes el filtro de disponibilidad los borraba y la home quedaba sin una sola película.
+- [x] **Helper de debrid en el panel**: elegís servicio (TorBox, Real-Debrid, Premiumize, AllDebrid, DebridLink, EasyDebrid, Offcloud, Put.io, Highway) + token, y la app arma el manifest configurado (`https://torrentio.strem.fun/torbox=TOKEN/manifest.json`), lo prueba pidiendo fuentes de un título real y te dice si devolvió links directos o solo torrents. Un campo, sin escribir URLs a mano.
+- [x] **Resolver de torrents configurable en caliente** (sin redeploy): el panel guarda la URL del Stremio server y la app la usa para convertir `infoHash` en HTTP. Es la alternativa gratuita al debrid (es lo que usan Stremio y Nuvio). Test de contrato en `web/tests/torrent-resolver.test.ts`.
+- [x] Diagnóstico del resolver en la API: `GET/POST /api/admin/torrent-server` (guarda, prueba alcance y avisa con honestidad).
+- [ ] **Pendiente del usuario (el único bloqueo para reproducir P2P)**: un token de debrid, o la URL pública de un Stremio server. Con cualquiera de los dos, los 4 addons de streams pasan a devolver links directos y la app reproduce cualquier película o serie. Verificado: hoy los 4 devuelven 0 URLs HTTP (solo `infoHash`); The Matrix acumula 1372 fuentes P2P.
+- [ ] Pendiente del usuario: manifest propio de los 5 addons de subtítulos que piden cuenta (con la URL pegada en el panel quedan operativos).
+- [ ] El manifest personal de AIOStreams en `.secrets/` apunta a `192.168.0.122` (LAN): no es alcanzable desde Vercel. Para usarlo hace falta exponerlo (tunnel) o dejar el resolver en la red de casa.
+
 ## Despliegue en Vercel (2026-11-10) — lo prioritario funcionando
 - [x] Front y back publicados en `https://fubol-five.vercel.app` (proyecto `fubol`, equipo `nachopalmeris-projects`). Vercel CLI 59.23.2, login `nachopalmeri`.
 - [x] Estado persistente sin Turso ni click legal: un documento JSON con links, fuentes, addons y ajustes, sobre **Vercel Blob privado** (`fubol-state`, `fubol/state.json`) con escritura CAS por ETag. SQLite sigue siendo el backend de Docker/local, con migración automática desde las tablas viejas.

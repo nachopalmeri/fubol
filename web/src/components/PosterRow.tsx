@@ -17,6 +17,11 @@ export function PosterCard({ meta }: { meta: AddonMetaPreview }) {
           <span className="poster-fallback" aria-hidden="true"><span>{meta.type === "series" ? "SERIE" : "PELÍCULA"}</span>{meta.name}</span>
         )}
         {meta.imdbRating ? <span className="poster-rating">{meta.imdbRating}</span> : null}
+        {!meta.playableId && meta.p2p ? (
+          <span className="poster-flag" title="Los proveedores ofrecen esta película como torrent. Para verla en el navegador hace falta un resolver (debrid) configurado en el panel.">
+            P2P
+          </span>
+        ) : null}
       </div>
       <div className="poster-copy">
         <strong>{meta.name}</strong>

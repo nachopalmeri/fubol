@@ -9,6 +9,8 @@ import type { VodSource } from "./rank";
 export interface AvailableMeta extends AddonMetaPreview {
   playableId?: string;
   availabilityCheckedAt?: number;
+  /** Torrent sources found when no direct source exists. */
+  p2p?: number;
 }
 
 async function readPrefix(res: Response, maxBytes: number): Promise<Uint8Array> {
@@ -91,7 +93,7 @@ export async function validateVodSource(source: VodSource): Promise<"hls" | "mp4
 }
 
 interface Resolver {
-  streams(type: string, id: string): Promise<{ sources: VodSource[] }>;
+  streams(type: string, id: string): Promise<{ sources: VodSource[]; p2pOnly?: number }>;
   meta(type: string, id: string): Promise<AddonMeta | null>;
 }
 
@@ -104,16 +106,24 @@ export async function availableMeta(
   timeoutMs = 12_000,
 ): Promise<AvailableMeta | null> {
   if (!["movie", "series"].includes(meta.type)) return null;
-  const key = `vod:available:v1:${providerRevision}:${meta.type}:${meta.id}`;
-  const cached = cacheGet<{ playableId: string | null; checkedAt: number }>(key);
-  if (cached) return cached.playableId ? { ...meta, playableId: cached.playableId, availabilityCheckedAt: cached.checkedAt } : null;
+  const key = `vod:available:v2:${providerRevision}:${meta.type}:${meta.id}`;
+  const cached = cacheGet<{ playableId: string | null; checkedAt: number; p2p: number }>(key);
+  if (cached) {
+    if (cached.playableId) {
+      return { ...meta, playableId: cached.playableId, availabilityCheckedAt: cached.checkedAt, p2p: cached.p2p };
+    }
+    // A title the providers only offer as torrent is still a real title with
+    // real sources. It is shown with its count instead of being hidden.
+    return cached.p2p > 0 ? { ...meta, availabilityCheckedAt: cached.checkedAt, p2p: cached.p2p } : null;
+  }
   const inFlight = pending.get(key);
   if (inFlight) {
     const result = await inFlight;
-    return result ? { ...meta, playableId: result.playableId, availabilityCheckedAt: result.availabilityCheckedAt } : null;
+    return result ? { ...meta, ...result } : null;
   }
   const task = (async () => {
     let playableId: string | null = null;
+    let p2p = 0;
     const deadline = Date.now() + Math.max(1, timeoutMs);
     try {
       let ids = [meta.id];
@@ -127,14 +137,16 @@ export async function availableMeta(
       for (const id of ids) {
         if (Date.now() >= deadline) break;
         const result = await withTimeout(resolver.streams(meta.type, id), Math.max(1, deadline - Date.now()), "Availability deadline");
+        p2p = Math.max(p2p, result.p2pOnly ?? 0);
         if (result.sources.length > 0) { playableId = id; break; }
       }
     } catch {
-      // Fail closed: unknown is not a playable title.
+      // Fail closed for the direct sources; a torrent count is a bonus.
     }
     const checkedAt = Date.now();
-    cacheSet(key, { playableId, checkedAt }, playableId ? 90_000 : 30_000);
-    return playableId ? { ...meta, playableId, availabilityCheckedAt: checkedAt } : null;
+    cacheSet(key, { playableId, checkedAt, p2p }, playableId ? 90_000 : 30_000);
+    if (playableId) return { ...meta, playableId, availabilityCheckedAt: checkedAt, p2p };
+    return p2p > 0 ? { ...meta, availabilityCheckedAt: checkedAt, p2p } : null;
   })();
   pending.set(key, task);
   try { return await task; } finally { pending.delete(key); }

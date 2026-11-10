@@ -40,7 +40,9 @@ export default async function HomePage() {
     channels,
   );
   const metas = rows.flatMap((row) => row.metas);
-  const featured = metas[0];
+  // The hero should open something that plays; a torrent-only title is the
+  // fallback, and it says so instead of promising a stream.
+  const featured = metas.find((meta) => meta.playableId) ?? metas[0];
   const today = [...liveFixtures(fixtures), ...todaysFixtures(fixtures)]
     .filter((fixture, index, list) => list.findIndex((item) => item.id === fixture.id) === index)
     .slice(0, 5);
@@ -95,7 +97,13 @@ export default async function HomePage() {
               <img className="home-feature-art" src={featured.background || featured.poster} alt="" fetchPriority="high" />
             ) : null}
             <div className="home-feature-copy">
-              <span className="eyebrow">Disponible para reproducir</span>
+              <span className="eyebrow">
+                {featured.playableId
+                  ? "Disponible para reproducir"
+                  : featured.p2p
+                    ? "Fuentes P2P · necesita un resolver"
+                    : "En tu biblioteca"}
+              </span>
               <h1 id="feature-title">{featured.name}</h1>
               <p>{featured.description || [featured.releaseInfo, featured.genres?.slice(0, 2).join(" · ")].filter(Boolean).join(" · ") || "En tu biblioteca"}</p>
               <div className="home-feature-actions">

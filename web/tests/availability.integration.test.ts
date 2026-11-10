@@ -49,12 +49,21 @@ afterAll(async () => {
 });
 
 describe("availability-first browsing", () => {
-  it("hides P2P, HTML gates and unsupported MKV from search", async () => {
-    expect((await searchVod("Movie")).map((item) => item.meta.id)).toEqual(["available"]);
+  it("lists torrent-only titles but never as directly playable", async () => {
+    const results = await searchVod("Movie");
+    // HTML gates and unsupported MKV stay out; a title the providers only
+    // offer as torrent is real and stays visible, flagged as such.
+    expect(results.map((item) => item.meta.id)).toEqual(["available", "p2p"]);
+    const torrent = results.find((item) => item.meta.id === "p2p");
+    expect(torrent?.meta.playableId).toBeUndefined();
+    expect(torrent?.meta.p2p).toBeGreaterThan(0);
+    expect(results.find((item) => item.meta.id === "available")?.meta.playableId).toBe("available");
   });
-  it("does not advertise unavailable titles on browse rails", async () => {
+  it("keeps browse rails to the same contract", async () => {
     const rows = await getHomeRows();
-    expect(rows.flatMap((row) => row.metas.map((meta) => meta.id))).toEqual(["available"]);
+    const metas = rows.flatMap((row) => row.metas);
+    expect(metas.map((meta) => meta.id)).toEqual(["available", "p2p"]);
+    expect(metas.find((meta) => meta.id === "p2p")?.playableId).toBeUndefined();
   });
   it("refills search beyond the first 48 metadata candidates", async () => {
     expect((await searchVod("Refill")).map((item) => item.meta.id)).toEqual(["available"]);
