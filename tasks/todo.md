@@ -2,6 +2,14 @@
 
 Actualizado: 2026-11-10
 
+## Sync de subtítulos verificado en producción (2026-11-10, noche)
+- [x] El sidecar de alineación por audio (`subsync/`) publicado con un túnel propio y `SUBSYNC_URL` configurado en Vercel: el sync por audio ahora responde desde el deploy (`offset_ms -13500`, confianza 0,264 con ventana de 90 s) en vez de dar 500.
+- [x] `maxDuration` de `/api/subtitles/sync` subido a 300 s: el alineado real tarda minutos (extraer el audio es lo lento) y con 30 s la función moría antes.
+- [x] Sync por referencia desde la UI: "Offset 0.0 s · confianza 95%" entre la pista ES y la EN de OpenSubtitles v3.
+- [x] Verificado en el navegador: *The Shawshank Redemption* reproduciéndose desde Torrentio (vía el resolver), con la pista ES de OpenSubtitles v3 renderizada en pantalla (1.692 cues, "SUEÑO DE FUGA") y el video reanudado desde el progreso guardado (2.423 s).
+- [x] El único addon de subtítulos que responde sin cuenta es **OpenSubtitles v3** (37 pistas: 3 ES, 3 EN, 17 idiomas). Los otros cinco (SubSource, SubDL, Community Subtitles, SubSense, OpenSubtitles PRO) están instalados pero devuelven 404 hasta que uno se registra; se probaron 16 candidatos más del directorio y ninguno responde sin cuenta.
+- [ ] Pendiente: los cinco manifests con sesión de los addons de subtítulos, que Gandalf está creando con su propio email (quedan en `.secrets/subtitle-manifests.json`).
+
 ## P2P reproducible sin debrid (2026-11-10, noche)
 - [x] **Camino gratis montado y verificado**: `stremio/server:v4.22.5` (el servidor de streaming de Stremio, el mismo mecanismo de Stremio y Nuvio) levanta el `infoHash` de los addons y lo re-sirve por HTTP. Con un túnel de Cloudflare sin cuenta queda alcanzable desde Vercel.
 - [x] **Los releases MKV/HEVC ahora se remuxean**: la app pide la variante HLS del resolver (`/hlsv2/...&profile=h264`) y el servidor transcodifica a MP4 fragmentado. Antes se descartaban por ser "no reproducibles en el navegador", que era la razón por la que Torrentio no servía para nada ahí.
