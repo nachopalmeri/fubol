@@ -417,9 +417,15 @@ export async function getPlayableVodStreams(type: string, id: string): Promise<V
   const torrents = result.sources.filter((source) => source.viaTorrent);
   const direct = result.sources.filter((source) => !source.viaTorrent);
 
+  // The resolver hands out one stream per request: asking it for the playlist
+  // as a "check" takes the slot and the playback that follows is rejected as
+  // "another device". Its own answers are trusted without a probe.
+  const resolverBase = torrentServerBase();
+  const isResolverUrl = (url: string) => Boolean(resolverBase && url.startsWith(`${resolverBase}/`));
+
   const inspected = await mapLimit(direct.slice(0, 6), 3, async (source) => ({
     source,
-    kind: await validateVodSource(source),
+    kind: isResolverUrl(source.url) ? ("hls" as const) : await validateVodSource(source),
   }));
 
   const kinds: Record<string, "hls" | "mp4"> = {};

@@ -10,6 +10,9 @@ Actualizado: 2026-11-10
 - [x] El deploy por CLI volvió a funcionar desde la raíz del repo (el proyecto tiene `Root Directory: web`); el vínculo local `.vercel/` quedó en la raíz y en `.gitignore`.
 - [x] Runbook de operación: `docs/OPERATIONS.md` (qué corre dónde, qué se rompe, qué hacer, qué cuesta y qué NO depende de la PC).
 - [x] Tests nuevos: `web/tests/resolver-and-sync.test.ts` (estado del resolver y caché de alineación compartida). **198 tests** en verde.
+- [x] El proveedor da **un stream activo por cuenta**: si el pedido que lo tenía era nuestro, el proxy espera 3 s y reintenta una vez; si lo tiene otra reproducción, el mensaje lo dice claro ("cerrá la otra reproducción") en vez de un 403 crudo.
+- [x] `maxDuration` de `/api/stream` subido a 300 s: con 60 s, una tanda fría del enjambre daba 504 antes de que el resolver terminara de servir el playlist.
+- [x] Las fuentes del resolver no se vuelven a validar (la validación consumía el único cupo y le robaba el stream al propio reproductor).
 - [ ] SubSource sigue sin sesión: su alta exige un captcha de Cloudflare que ni el bot ni el clic automatizado completan. Es el único paso que queda a una persona.
 
 ## Todo en main, desplegado desde Git (2026-11-10, noche)

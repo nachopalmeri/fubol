@@ -15,12 +15,30 @@
  *   2. si no responde, vuelve a publicar el túnel y actualiza la dirección.
  */
 import { spawn } from "node:child_process";
+import fs from "node:fs";
 import path from "node:path";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
 const ADMIN_URL = (process.env.FUBOL_ADMIN_URL ?? "https://fubol-five.vercel.app").replace(/\/+$/, "");
-const PASSWORD = process.env.FUBOL_ADMIN_PASSWORD ?? "";
 const INTERVAL_MIN = Number(process.env.FUBOL_WATCHDOG_MINUTES ?? 5) * 60_000;
+
+/**
+ * The panel password comes from the environment or from the private file.
+ * It never goes on the command line, where any process on the machine could
+ * read it.
+ */
+function adminPassword() {
+  const fromEnv = process.env.FUBOL_ADMIN_PASSWORD?.trim();
+  if (fromEnv) return fromEnv;
+  const file = path.join(ROOT, ".secrets", "admin.password");
+  try {
+    return fs.readFileSync(file, "utf8").trim();
+  } catch {
+    return "";
+  }
+}
+
+const PASSWORD = adminPassword();
 
 function say(...parts) {
   console.log(`[${new Date().toISOString().slice(11, 19)}]`, ...parts);

@@ -108,19 +108,44 @@ export async function GET(request: Request): Promise<Response> {
   const viaTorrent = base !== undefined && target.startsWith(`${base}/`);
 
   try {
-    const { res, finalUrl } = await fetchUpstream(target, {
+    let { res, finalUrl } = await fetchUpstream(target, {
       headers,
       range,
       timeoutMs: viaTorrent ? 90_000 : 15_000,
       signal: request.signal,
     });
 
+    // The provider hands out one active stream per account. When the request
+    // that holds it was ours (a check a moment ago) the slot frees itself in a
+    // couple of seconds, so it is worth one retry before telling the viewer
+    // that somebody else is watching.
+    if (res.status === 403 && !range) {
+      await res.text().catch(() => "");
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+      const retry = await fetchUpstream(target, {
+        headers,
+        range,
+        timeoutMs: viaTorrent ? 90_000 : 15_000,
+        signal: request.signal,
+      });
+      res = retry.res;
+      finalUrl = retry.finalUrl;
+    }
+
     const contentType = (res.headers.get("content-type") ?? "").toLowerCase();
     const isPlaylist =
       /mpegurl|m3u8/.test(contentType) || /\.m3u8?(\?|$)/i.test(finalUrl);
 
     if (isPlaylist) {
-      if (!res.ok) throw new UpstreamError(`El origen respondió ${res.status}`, 502);
+      if (!res.ok) {
+        if (res.status === 403) {
+          throw new UpstreamError(
+            "Este stream ya está en uso en la cuenta del proveedor. Cerrá la otra reproducción y reintentá en un momento.",
+            409,
+          );
+        }
+        throw new UpstreamError(`El origen respondió ${res.status}`, 502);
+      }
       const text = await readTextLimited(res, 2_500_000);
       const gate = detectGate(text);
       if (gate) throw new UpstreamError(`La fuente pide ${gate}`, 502);
