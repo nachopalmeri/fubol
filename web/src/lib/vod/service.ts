@@ -126,7 +126,7 @@ async function computeHomeRows(maxRows: number): Promise<HomeRow[]> {
   const available = await filterAvailable(
     [...new Map(out.flatMap((row) => row.metas).map((meta) => [`${meta.type}:${meta.id}`, meta])).values()].slice(0, 48),
     await providerRevision(),
-    { streams: getPlayableVodStreams, meta: getVodMeta },
+    { streams: probeVodStreams, meta: getVodMeta },
     6_000,
   );
   const availableById = new Map(available.map((meta) => [`${meta.type}:${meta.id}`, meta]));
@@ -207,7 +207,7 @@ export async function searchVod(query: string, timeoutMs = 10_000): Promise<Sear
   const available = await filterAvailable(
     ordered.map((result) => result.meta),
     await providerRevision(),
-    { streams: getPlayableVodStreams, meta: getVodMeta },
+    { streams: probeVodStreams, meta: getVodMeta },
     Math.max(1_000, deadline - Date.now() - 250),
   );
   const byId = new Map(available.map((meta) => [`${meta.type}:${meta.id}`, meta]));
@@ -290,6 +290,108 @@ export async function getVodStreams(type: string, id: string): Promise<VodStream
 export interface SubtitleProvider {
   addon: AddonRow;
   manifestName: string;
+}
+
+/**
+ * Which addons have ever answered with a link a browser can open.
+ *
+ * With a debrid configured, the stream addons return HTTP URLs; without one,
+ * they all answer with `infoHash`. Asking every addon for every title is the
+ * difference between a home that loads in half a second and one that takes
+ * eight: four addons over fifty titles is two hundred requests. Once the app
+ * knows that no addon produces direct links, one is enough to know that a
+ * title exists as a torrent, and the rest are only asked again once one of
+ * them starts returning something playable.
+ */
+const directCapable = new Set<string>();
+const p2pCapable = new Set<string>();
+/**
+ * Addons that just failed are left alone for a while. A rate-limited provider
+ * answers every request with an error, and asking it again for every title
+ * turned the catalog sweep into a queue of timeouts.
+ */
+const quarantined = new Map<string, number>();
+const QUARANTINE_MS = 90_000;
+
+export interface VodProbe {
+  sources: VodSource[];
+  p2pOnly: number;
+}
+
+/**
+ * Cheap availability probe used by the browse rails and by search.
+ *
+ * It answers the two questions browsing needs: is there something playable
+ * here, and is this title offered at all. The full fan-out to every addon is
+ * what the title page uses, where the user asked for the sources.
+ */
+export async function probeVodStreams(type: string, id: string): Promise<VodProbe> {
+  const addons = await listAddonRows("vod");
+  if (addons.length === 0) return { sources: [], p2pOnly: 0 };
+
+  const capable = addons.filter((addon) => directCapable.has(addon.id));
+  // Nobody is known to answer with a direct link yet: one addon is enough to
+  // learn whether the title exists, and the others are only worth asking when
+  // one of them starts returning links.
+  const healthy = addons.filter((addon) => (quarantined.get(addon.id) ?? 0) <= Date.now());
+  const usable = healthy.length > 0 ? healthy : addons;
+  let targets = capable.length > 0 ? capable.filter((addon) => usable.includes(addon)) : usable.slice(0, 1);
+  if (targets.length === 0) targets = usable.slice(0, 1);
+
+  let results = await probeVodAddons(targets, type, id);
+  const nothing = results.every((result) => result.direct.length === 0 && result.p2p === 0);
+  if (nothing && targets.length < addons.length) {
+    // The addon that answered nothing may simply be having a bad moment (a
+    // rate limit answers 429 and no streams). Asking one more is cheaper than
+    // dropping a title that three other providers do have.
+    const rest = addons
+      .filter((addon) => !targets.some((target) => target.id === addon.id))
+      .filter((addon) => (quarantined.get(addon.id) ?? 0) <= Date.now())
+      .slice(0, 2);
+    targets = [...targets, ...rest];
+    results = [...results, ...(await probeVodAddons(rest, type, id))];
+  }
+
+  const sources: VodSource[] = [];
+  let p2pOnly = 0;
+  for (const result of results) {
+    p2pOnly = Math.max(p2pOnly, result.p2p);
+    // Validating one candidate is enough to know whether the addon is really
+    // serving playable files; the title page lists them all.
+    const inspected = await mapLimit(result.direct.slice(0, 2), 2, async (source) => ({
+      source,
+      kind: await validateVodSource(source),
+    }));
+    for (const item of inspected) {
+      if (item.kind) sources.push(item.source);
+    }
+  }
+  return { sources, p2pOnly };
+}
+
+async function probeVodAddons(
+  addons: AddonRow[],
+  type: string,
+  id: string,
+): Promise<{ addon: AddonRow; direct: VodSource[]; p2p: number }[]> {
+  return mapLimit(addons, 3, async (addon) => {
+    const until = quarantined.get(addon.id);
+    if (until && until > Date.now()) return { addon, direct: [] as VodSource[], p2p: 0 };
+    try {
+      const manifest = await getManifest(addon.url);
+      if (!supports(manifest, "stream")) return { addon, direct: [] as VodSource[], p2p: 0 };
+      const streams = await withTimeout(getStreams(addon, type, id), 12_000, "streams lentos");
+      const direct = normalizeStreams(addon, streams).filter((source) => !source.viaTorrent);
+      const p2p = streams.filter((stream) => !stream.url && stream.infoHash).length;
+      if (direct.length > 0) directCapable.add(addon.id);
+      if (p2p > 0) p2pCapable.add(addon.id);
+      quarantined.delete(addon.id);
+      return { addon, direct, p2p };
+    } catch {
+      quarantined.set(addon.id, Date.now() + QUARANTINE_MS);
+      return { addon, direct: [] as VodSource[], p2p: 0 };
+    }
+  });
 }
 
 export async function getPlayableVodStreams(type: string, id: string): Promise<VodStreamsResult & { kinds: Record<string, "hls" | "mp4"> }> {

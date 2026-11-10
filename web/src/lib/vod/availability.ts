@@ -132,7 +132,12 @@ export async function availableMeta(
         ids = (detail?.videos ?? [])
           .filter((video) => (video.season ?? 1) > 0 && (!video.released || Date.parse(video.released) <= Date.now()))
           .sort((a, b) => (a.season ?? 1) - (b.season ?? 1) || (a.episode ?? 1) - (b.episode ?? 1))
-          .slice(0, 12).map((video) => video.id);
+          // Four episodes are enough to know whether the series has sources
+          // without giving up on the first ones that come out empty. Checking
+          // twelve made every series blow the browse deadline and the whole
+          // "Series" page came back empty.
+          .slice(0, 4)
+          .map((video) => video.id);
       }
       for (const id of ids) {
         if (Date.now() >= deadline) break;
