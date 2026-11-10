@@ -2,6 +2,12 @@
 
 Actualizado: 2026-11-10
 
+## Paridad con Nuvio: "seguir viendo" (2026-11-10, noche)
+- [x] El progreso se guarda en el **estado compartido**, no en el navegador: el reproductor lo reporta cada 15 s, la página de la película y la del episodio reanudan desde ahí (gana el dato más nuevo entre navegador y servidor) y la home muestra un renglón "Seguir viendo" con póster, barra de progreso y porcentaje.
+- [x] El histórico es **por espectador**: el admin no ve lo que miró la familia y cada link tiene el suyo (`scope` = código del link).
+- [x] `POST/GET/DELETE /api/progress`. Un título visto hasta el final sale del renglón en vez de ofrecer retomar tres segundos antes del cierre.
+- [x] Helper de debrid ampliado: acepta también el **manifest URL** de Comet/MediaFusion/Meteor (que codifican la configuración en la URL) y lo prueba con la misma honestidad.
+
 ## Catálogo completo y addons (2026-11-10, tarde)
 - [x] **14 addons instalados** en producción: Cinemeta, AIO Metadata, TMDB Addon, WatchHub (metadata) · OpenSubtitles v3, OpenSubtitles PRO, SubSource, SubDL, Stremio Community Subtitles, SubSense (subtítulos) · Torrentio, Comet, MediaFusion, Meteor (streams). Es todo lo del catálogo de `config/addons/catalog.json` salvo lo que necesita tu cuenta o tu red (AIOStreams propio, LPF Play, FIFA+, UEFA.tv).
 - [x] **Los 17 catálogos deportivos del addon importados** como fuentes vivas (antes solo 2): Live Now, Today, Football, Basketball, American Football, Hockey, Baseball, Motor Sports, Fight, Tennis, Rugby, Golf, Billiards, AFL, Darts, Cricket, Other. **186 canales** navegables (antes 43), con sus grupos en el browser.

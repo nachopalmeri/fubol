@@ -102,10 +102,25 @@ export const POST = route("admin_debrid", async (request) => {
   const applied: string[] = [];
   if (body.apply) {
     const addons = await listAddonRows(undefined, true);
-    // Update the addons that point at the same provider without a token.
+    const host = (() => {
+      try {
+        return new URL(manifestUrl).host;
+      } catch {
+        return null;
+      }
+    })();
+    // The addons that point at the same provider without a token are the ones
+    // this configuration replaces: Torrentio's public manifest, or the same
+    // host with a different configuration.
     const targets = addons.filter((addon) => {
-      if (!addon.url.startsWith(TORRENTIO)) return false;
-      return !addon.url.includes("=");
+      if (!host) return false;
+      try {
+        const addonHost = new URL(addon.url).host;
+        if (addonHost !== host) return false;
+        return !addon.url.includes("=");
+      } catch {
+        return false;
+      }
     });
     for (const addon of targets) {
       await updateAddon(addon.id, { url: manifestUrl });

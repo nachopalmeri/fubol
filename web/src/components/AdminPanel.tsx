@@ -430,6 +430,7 @@ export default function AdminPanel({ initialTab = "links" }: { initialTab?: Admi
   const [addonName, setAddonName] = useState("");
   const [debridProvider, setDebridProvider] = useState("torbox");
   const [debridToken, setDebridToken] = useState("");
+  const [debridManifest, setDebridManifest] = useState("");
   const [debridResult, setDebridResult] = useState<{
     ok: boolean;
     direct: number;
@@ -489,7 +490,12 @@ export default function AdminPanel({ initialTab = "links" }: { initialTab?: Admi
         error?: string;
       }>("/api/admin/debrid", {
         method: "POST",
-        body: JSON.stringify({ provider: debridProvider, token: debridToken, apply }),
+        body: JSON.stringify({
+          provider: debridProvider,
+          token: debridToken,
+          manifestUrl: debridManifest.trim() || undefined,
+          apply,
+        }),
       });
       setDebridResult(data);
       if (data.ok && apply) {
@@ -1229,6 +1235,21 @@ export default function AdminPanel({ initialTab = "links" }: { initialTab?: Admi
                   autoComplete="off"
                   placeholder="Se guarda solo en el manifest del addon"
                 />
+              </div>
+              <div className="field">
+                <label htmlFor="debrid-manifest">O el manifest URL de otro proveedor</label>
+                <input
+                  id="debrid-manifest"
+                  className="input"
+                  value={debridManifest}
+                  onChange={(event) => setDebridManifest(event.target.value)}
+                  placeholder="https://comet.feels.legal/<config>/manifest.json"
+                  spellCheck={false}
+                />
+                <small>
+                  Comet, MediaFusion y Meteor codifican la configuración en la URL. Pegá acá la que
+                  te da el proveedor y el helper la prueba igual.
+                </small>
               </div>
               {debridResult && (
                 <div className={debridResult.ok ? "form-ok" : "form-error"}>
