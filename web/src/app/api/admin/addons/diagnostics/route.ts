@@ -1,8 +1,17 @@
 import { json, requireAdmin, route } from "@/lib/api";
-import { addonDiagnostics } from "@/lib/vod/service";
+import { addonDiagnostics, type AddonDiagnostic } from "@/lib/vod/service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+/**
+ * The last good reading, so a network hiccup does not make the panel say
+ * that every addon is down. Fourteen manifests fetched in parallel can all
+ * time out at once when the network stutters, and "todo caído" is both wrong
+ * and alarming.
+ */
+let lastGood: { at: number; addons: AddonDiagnostic[] } | null = null;
+const GOOD_FOR_MS = 10 * 60_000;
 
 /**
  * Per-addon state for the admin panel. Reports whether an addon can actually
@@ -14,13 +23,23 @@ export const dynamic = "force-dynamic";
 export const GET = route("admin_addon_diagnostics", async () => {
   await requireAdmin();
   const addons = await addonDiagnostics();
+  const allDown = addons.length > 0 && addons.every((addon) => !addon.manifestOk);
+  let stale = false;
+  let reported = addons;
+  if (allDown && lastGood && Date.now() - lastGood.at < GOOD_FOR_MS) {
+    reported = lastGood.addons;
+    stale = true;
+  } else if (addons.some((addon) => addon.manifestOk)) {
+    lastGood = { at: Date.now(), addons };
+  }
   return json({
-    addons,
+    addons: reported,
+    stale,
     summary: {
-      total: addons.length,
-      serving: addons.filter((addon) => addon.manifestOk && !addon.needsConfiguration).length,
-      needConfiguration: addons.filter((addon) => addon.needsConfiguration).length,
-      unreachable: addons.filter((addon) => !addon.manifestOk).length,
+      total: reported.length,
+      serving: reported.filter((addon) => addon.manifestOk && !addon.needsConfiguration).length,
+      needConfiguration: reported.filter((addon) => addon.needsConfiguration).length,
+      unreachable: reported.filter((addon) => !addon.manifestOk).length,
     },
   });
 });

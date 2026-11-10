@@ -8,6 +8,8 @@ config/mediafusion.env
 !.secrets/README.md
 public/family/*
 .playwright-mcp/
+# Vínculo local con el proyecto de Vercel (el build real usa web/).
+.vercel/
 # Binario del túnel público (55 MB) y estado de runtime del resolver.
 tools/
 config/torrserver/server-settings.json

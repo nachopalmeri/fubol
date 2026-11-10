@@ -69,6 +69,8 @@ export const GET = route("vod_streams", async (request) => {
       url: signSubtitleUrl(subtitle.url, undefined, { titleId: id }),
     })),
     addonsTried: streams.addonsTried,
+    /** Whether the resolver that turns torrents into playable files answers. */
+    resolver: streams.resolver,
     // Why nothing is playable, when nothing is. P2P-only means the providers
     // answered with BitTorrent hashes, which need a debrid resolver before a
     // browser can open them; it does not mean the title is unavailable.

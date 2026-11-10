@@ -5,8 +5,9 @@ import { listAddonRows } from "@/lib/vod/store";
 import { listShareLinks } from "@/lib/links";
 import { relayStatus } from "@/lib/live/relay";
 import { recentChecks } from "@/lib/metrics";
-import { storageInfo } from "@/lib/state";
+import { storageInfo, readState } from "@/lib/state";
 import { egressInfo } from "@/lib/egress";
+import { resolverStatus, syncTorrentServerSettings } from "@/lib/vod/torrent";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -51,6 +52,9 @@ function aggregate(): Map<string, SourceStats> {
 
 export const GET = route("admin_health", async () => {
   await requireAdmin();
+  // The resolver address lives in the shared state: every instance has to
+  // read it before it can say whether the resolver answers.
+  await syncTorrentServerSettings();
   // Counting how often a source's delay could actually be measured is the
   // difference between "our sources are fast" and "our sources do not say".
   // The numbers come from this instance's ring buffer: the app also runs where
@@ -83,6 +87,7 @@ export const GET = route("admin_health", async () => {
     };
   });
   const links = await listShareLinks();
+  const doc = await readState();
   return json({
     sources,
     totalChannels: channels.length,
@@ -91,5 +96,8 @@ export const GET = route("admin_health", async () => {
     relay: relayStatus(),
     storage: storageInfo(),
     network: await egressInfo(),
+    resolver: await resolverStatus(),
+    /** Titles whose subtitles were already aligned against the audio. */
+    alignedTitles: Object.keys(doc.sync).length,
   });
 });

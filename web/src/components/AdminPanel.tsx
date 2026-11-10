@@ -65,6 +65,8 @@ interface HealthData {
     stable: boolean;
     note: string;
   };
+  resolver?: { configured: boolean; reachable: boolean; url: string | null };
+  alignedTitles?: number;
 }
 
 interface ProbeResult {
@@ -1353,7 +1355,41 @@ export default function AdminPanel({ initialTab = "links" }: { initialTab?: Admi
               <strong>{health?.links ?? "—"}</strong>
               <span>links activos</span>
             </div>
+            <div className="stat-card">
+              <strong>{health?.alignedTitles ?? "—"}</strong>
+              <span>títulos alineados</span>
+            </div>
           </div>
+
+          {health?.resolver && (
+            <section className="panel" style={{ marginBottom: 18 }}>
+              <div className="panel-head">
+                <div>
+                  <h2>Resolver de torrents</h2>
+                  <p>El servicio que convierte los torrents de los addons en archivos que el navegador reproduce.</p>
+                </div>
+                <span className={`tag ${health.resolver.reachable ? "tag-on" : "tag-off"}`}>
+                  {health.resolver.configured
+                    ? health.resolver.reachable
+                      ? "respondiendo"
+                      : "sin respuesta"
+                    : "no configurado"}
+                </span>
+              </div>
+              <div className="panel-body">
+                {health.resolver.url && (
+                  <p className="muted" style={{ wordBreak: "break-all" }}>{health.resolver.url}</p>
+                )}
+                {!health.resolver.reachable && health.resolver.configured && (
+                  <p className="muted">
+                    Con el túnel caído, los títulos P2P no se reproducen. Se levanta solo con{" "}
+                    <code>node scripts/torrent-resolver.mjs --admin {typeof window !== "undefined" ? window.location.origin : ""} --detach</code>{" "}
+                    o con <code>scripts/resolver-watchdog.mjs</code> vigilándolo.
+                  </p>
+                )}
+              </div>
+            </section>
+          )}
 
           {health?.network && (
             <section className="panel" style={{ marginBottom: 18 }}>

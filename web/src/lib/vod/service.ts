@@ -14,7 +14,7 @@ import {
 } from "../addons";
 import { listAddonRows, type AddonRow } from "./store";
 import { dedupeSources, normalizeStreams, type VodSource } from "./rank";
-import { syncTorrentServerSettings, torrentServerBase } from "./torrent";
+import { syncTorrentServerSettings, torrentServerBase, resolverStatus } from "./torrent";
 import { filterAvailable, validateVodSource } from "./availability";
 import { shortHash } from "../crypto";
 import { getOpenFilm, getOpenFilmMetas, OPEN_FILM_ADDON, openFilmsEnabled } from "./open-films";
@@ -256,6 +256,8 @@ export interface VodStreamsResult {
   p2pOnly: number;
   /** Addons that declare themselves unconfigured and were skipped. */
   unconfigured: { name: string; configureUrl: string | null }[];
+  /** Whether the resolver that opens those hashes is answering. */
+  resolver: { configured: boolean; reachable: boolean; url: string | null };
 }
 
 export async function getVodStreams(type: string, id: string): Promise<VodStreamsResult> {
@@ -288,6 +290,7 @@ export async function getVodStreams(type: string, id: string): Promise<VodStream
     addonsTried: addons.length + (openFilm ? 1 : 0),
     p2pOnly: results.reduce((total, result) => total + result.p2p, 0),
     unconfigured,
+    resolver: await resolverStatus(),
   };
 }
 

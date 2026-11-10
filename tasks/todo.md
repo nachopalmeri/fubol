@@ -2,6 +2,16 @@
 
 Actualizado: 2026-11-10
 
+## Última pasada: que nada se rompa en silencio (2026-11-10, noche)
+- [x] **El resolver caído ahora se dice**: la app consulta si el resolver responde y, cuando no, el título explica "El servidor que abre los torrents no responde" en vez de "sin fuentes". El panel → Salud muestra el estado del resolver, la IP de salida y cuántos títulos ya están alineados.
+- [x] **Watchdog**: `scripts/resolver-watchdog.mjs` revisa cada 5 minutos si el resolver contesta y, si no, vuelve a publicar el túnel y actualiza la dirección en la app.
+- [x] **Diagnósticos que no mienten**: si una tanda entera de manifests falla por un tirón de red, el panel muestra la última lectura buena en vez de decir que los catorce addons están caídos.
+- [x] El caché del estado del resolver ahora está indexado por la dirección: al republicarse el túnel, el estado viejo no se reutiliza.
+- [x] El deploy por CLI volvió a funcionar desde la raíz del repo (el proyecto tiene `Root Directory: web`); el vínculo local `.vercel/` quedó en la raíz y en `.gitignore`.
+- [x] Runbook de operación: `docs/OPERATIONS.md` (qué corre dónde, qué se rompe, qué hacer, qué cuesta y qué NO depende de la PC).
+- [x] Tests nuevos: `web/tests/resolver-and-sync.test.ts` (estado del resolver y caché de alineación compartida). **198 tests** en verde.
+- [ ] SubSource sigue sin sesión: su alta exige un captcha de Cloudflare que ni el bot ni el clic automatizado completan. Es el único paso que queda a una persona.
+
 ## Todo en main, desplegado desde Git (2026-11-10, noche)
 - [x] `main` pusheado (`4c59199..c745e3b`) y el deploy que dispara Git quedó **Ready** con el alias público `fubol-five.vercel.app` apuntando a él.
 - [x] El proyecto de Vercel tenía **Root Directory "."** (lo dejó el `vercel link` desde `web/`), así que el build por Git buscaba el `package.json` en la raíz y fallaba. Corregido a `web` por API: `vercel project inspect fubol` muestra `Root Directory web`.

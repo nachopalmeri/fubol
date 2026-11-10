@@ -20,6 +20,8 @@ interface VodResponse {
   /** Providers answered with BitTorrent hashes a browser cannot open. */
   p2pOnly?: number;
   unconfigured?: { name: string; configureUrl: string | null }[];
+  /** Whether the resolver that opens torrent sources is answering. */
+  resolver?: { configured: boolean; reachable: boolean; url: string | null };
   reason?: string | null;
   error?: string;
 }
@@ -122,14 +124,29 @@ export default function VodWatch({
     // "Sin fuentes" was misleading: the providers usually answer with hundreds
     // of BitTorrent hashes, which is a different problem with a different fix.
     const p2p = data?.p2pOnly ?? 0;
+    const resolverDown = data?.resolver?.configured === true && data?.resolver?.reachable === false;
     return (
       <div className="empty-state">
         <IconAlert size={30} />
-        <h2>{p2p > 0 ? "Las fuentes son torrents, no archivos" : "Sin fuentes para este título"}</h2>
-        <p>
-          {data?.reason ??
-            "Ningún addon de streams devolvió un archivo reproducible para este título."}
-        </p>
+        <h2>
+          {resolverDown
+            ? "El servidor que abre los torrents no responde"
+            : p2p > 0
+              ? "Las fuentes son torrents, no archivos"
+              : "Sin fuentes para este título"}
+        </h2>
+        {resolverDown ? (
+          <p>
+            Las fuentes existen ({p2p} torrents), pero el resolver que se une al enjambre y
+            re-sirve el archivo no está contestando. Es el servicio que corre en la máquina del
+            servidor; cuando vuelve, los títulos se reproducen solos.
+          </p>
+        ) : (
+          <p>
+            {data?.reason ??
+              "Ningún addon de streams devolvió un archivo reproducible para este título."}
+          </p>
+        )}
         {p2p > 0 && (
           <p className="empty-hint">
             Un navegador solo reproduce HTTP. Para abrir estas fuentes hace falta un servicio

@@ -1,6 +1,6 @@
 import { json, readJson, requireAdmin, route } from "@/lib/api";
 import { getSetting, setSetting } from "@/lib/state/settings";
-import { setTorrentServerBase, setTorrentServerMediaBase, torrentServerBase } from "@/lib/vod/torrent";
+import { setTorrentServerBase, setTorrentServerMediaBase, syncTorrentServerSettings, torrentServerBase } from "@/lib/vod/torrent";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -14,6 +14,9 @@ export const dynamic = "force-dynamic";
  */
 export const GET = route("admin_torrent_server_get", async () => {
   await requireAdmin();
+  // The address is read from the shared state, so the instance has to pick it
+  // up before it can report it.
+  await syncTorrentServerSettings();
   const stored = await getSetting("torrentServer");
   const mediaBase = await getSetting("torrentServerMediaBase");
   return json({

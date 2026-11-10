@@ -54,6 +54,45 @@ export function torrentServerMediaBase(): string {
 }
 
 /**
+ * Whether the resolver answers right now.
+ *
+ * The resolver is a separate process behind a tunnel: it can die, and the
+ * tunnel URL changes every time it restarts. When that happens the app would
+ * say "this title has no sources", which is true and useless. Knowing that
+ * the resolver is down is the difference between "nothing to play here" and
+ * "the machine that plays the torrents is off".
+ */
+export interface ResolverStatus {
+  configured: boolean;
+  reachable: boolean;
+  url: string | null;
+}
+
+let resolverProbe: { at: number; url: string; status: ResolverStatus } | null = null;
+
+export async function resolverStatus(timeoutMs = 4000): Promise<ResolverStatus> {
+  const base = torrentServerBase();
+  if (!base) return { configured: false, reachable: false, url: null };
+  // The cache is keyed by the address: when the tunnel is republished the
+  // address changes, and a status measured for the old one says nothing about
+  // the new one.
+  if (resolverProbe && resolverProbe.url === base && Date.now() - resolverProbe.at < 20_000) {
+    return resolverProbe.status;
+  }
+  let reachable = false;
+  try {
+    const res = await fetch(`${base}/settings`, { signal: AbortSignal.timeout(timeoutMs) });
+    reachable = res.ok;
+    await res.body?.cancel();
+  } catch {
+    reachable = false;
+  }
+  const status: ResolverStatus = { configured: true, reachable, url: base };
+  resolverProbe = { at: Date.now(), url: base, status };
+  return status;
+}
+
+/**
  * Refreshes the resolver address from the shared state.
  *
  * The address lives in the state document so it can be changed from the panel
