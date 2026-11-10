@@ -2,6 +2,13 @@
 
 Actualizado: 2026-11-10
 
+## Todo en main, desplegado desde Git (2026-11-10, noche)
+- [x] `main` pusheado (`4c59199..c745e3b`) y el deploy que dispara Git quedó **Ready** con el alias público `fubol-five.vercel.app` apuntando a él.
+- [x] El proyecto de Vercel tenía **Root Directory "."** (lo dejó el `vercel link` desde `web/`), así que el build por Git buscaba el `package.json` en la raíz y fallaba. Corregido a `web` por API: `vercel project inspect fubol` muestra `Root Directory web`.
+- [x] Barrida sobre el deploy de Git: 7 páginas 200, 14 addons con manifest ok, 187 canales en 14 categorías, búsquedas con resultados reales, 6 de 6 canales de fútbol sirviendo playlist, VOD P2P (playlist de 1 MB + segmento de 1,2 MB) y el offset de sync compartido (-13,5 s) disponible para cualquier dispositivo.
+- [x] Sync de subtítulos **automático**: al elegir pista la app compara las dos pistas sola (referencia, un segundo) y en segundo plano mide el desfase contra el audio de la película (ffsubsync). El servidor guarda la medición por título y fuente, así que el resto de los dispositivos arrancan alineados.
+- [x] El token de video lleva ahora el id de la fuente: sin eso la clave de la caché no cerraba y la alineación medida no se encontraba nunca.
+
 ## Sync de subtítulos verificado en producción (2026-11-10, noche)
 - [x] El sidecar de alineación por audio (`subsync/`) publicado con un túnel propio y `SUBSYNC_URL` configurado en Vercel: el sync por audio ahora responde desde el deploy (`offset_ms -13500`, confianza 0,264 con ventana de 90 s) en vez de dar 500.
 - [x] `maxDuration` de `/api/subtitles/sync` subido a 300 s: el alineado real tarda minutos (extraer el audio es lo lento) y con 30 s la función moría antes.
