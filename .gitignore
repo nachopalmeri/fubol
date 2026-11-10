@@ -8,3 +8,7 @@ config/mediafusion.env
 !.secrets/README.md
 public/family/*
 .playwright-mcp/
+# Binario del túnel público (55 MB) y estado de runtime del resolver.
+tools/
+config/torrserver/server-settings.json
+config/torrserver/*.log

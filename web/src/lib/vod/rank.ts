@@ -1,5 +1,5 @@
 import type { AddonRef, RawAddonStream } from "../addons";
-import { looksWebPlayable, resolveTorrentUrl, webPlayableBonus } from "./torrent";
+import { looksWebPlayable, resolveTorrentHlsUrl, resolveTorrentUrl, webPlayableBonus } from "./torrent";
 
 export interface VodSource {
   id: string;
@@ -21,6 +21,8 @@ export interface VodSource {
   filename?: string;
   /** Resolved from a BitTorrent infoHash by the local streaming server. */
   viaTorrent?: boolean;
+  /** The release had to be remuxed to HLS to be playable in a browser. */
+  transcoded?: boolean;
   score: number;
 }
 
@@ -87,12 +89,17 @@ export function normalizeStreams(addon: AddonRef, streams: RawAddonStream[]): Vo
     // torrents remain unplayable in a browser and are dropped as before.
     let url = stream.url;
     let viaTorrent = false;
+    let transcoded = false;
     if (!url && stream.infoHash) {
-      if (!looksWebPlayable(haystack)) continue;
-      const resolved = resolveTorrentUrl(stream.infoHash, stream.fileIdx);
+      // A release the browser can decode is served as it is; the rest needs
+      // the server to remux it to HLS.
+      const plain = looksWebPlayable(haystack) ? resolveTorrentUrl(stream.infoHash, stream.fileIdx) : null;
+      const hls = plain ? null : resolveTorrentHlsUrl(stream.infoHash, stream.fileIdx);
+      const resolved = plain ?? hls;
       if (!resolved) continue;
       url = resolved;
       viaTorrent = true;
+      transcoded = Boolean(hls);
     }
     if (!url) continue;
 
@@ -117,6 +124,8 @@ export function normalizeStreams(addon: AddonRef, streams: RawAddonStream[]): Vo
       spanish: /\b(dual|latino|castellano|español|espanol|spanish|vose)\b/i.test(haystack),
       headers: stream.behaviorHints?.proxyHeaders?.request,
       filename,
+      /** The server had to remux the release for the browser. */
+      transcoded,
     };
     // A swarm-backed file only plays as well as its seeders and container, so
     // a well-seeded MP4/H.264 release outranks a bigger one that may stall.

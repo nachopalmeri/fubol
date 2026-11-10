@@ -189,8 +189,11 @@ export default function AdminPanel({ initialTab = "links" }: { initialTab?: Admi
         setAddons(data.addons);
         const diag = await request<{ addons: AddonDiagnostic[] }>("/api/admin/addons/diagnostics");
         setDiagnostics(diag.addons);
-        const resolver = await request<{ url: string | null; enabled: boolean }>("/api/admin/torrent-server");
+        const resolver = await request<{ url: string | null; mediaBase: string | null; enabled: boolean }>(
+          "/api/admin/torrent-server",
+        );
         setTorrentServerUrl(resolver.url ?? "");
+        setTorrentServerMediaBase(resolver.mediaBase ?? "");
         setTorrentServerState((current) => current ?? { url: resolver.url });
       } else {
         const data = await request<HealthData>("/api/admin/health");
@@ -439,6 +442,7 @@ export default function AdminPanel({ initialTab = "links" }: { initialTab?: Admi
     error?: string;
   } | null>(null);
   const [torrentServerUrl, setTorrentServerUrl] = useState("");
+  const [torrentServerMediaBase, setTorrentServerMediaBase] = useState("");
   const [torrentServerState, setTorrentServerState] = useState<{
     url: string | null;
     reachable?: boolean;
@@ -452,7 +456,10 @@ export default function AdminPanel({ initialTab = "links" }: { initialTab?: Admi
     try {
       const data = await request<{ ok: boolean; url: string | null; reachable?: boolean; detail?: string }>(
         "/api/admin/torrent-server",
-        { method: "POST", body: JSON.stringify({ url: torrentServerUrl.trim() }) },
+        {
+          method: "POST",
+          body: JSON.stringify({ url: torrentServerUrl.trim(), mediaBase: torrentServerMediaBase.trim() }),
+        },
       );
       setTorrentServerState(data);
       if (data.url) setTorrentServerUrl(data.url);
@@ -1295,6 +1302,21 @@ export default function AdminPanel({ initialTab = "links" }: { initialTab?: Admi
                 <small>
                   Sólo se guarda la dirección; la app proxya el tráfico, así que el resolver no
                   necesita estar expuesto a internet si la app corre en la misma red.
+                </small>
+              </div>
+              <div className="field">
+                <label htmlFor="torrent-server-media">Dirección interna del resolver</label>
+                <input
+                  id="torrent-server-media"
+                  className="input"
+                  value={torrentServerMediaBase}
+                  onChange={(event) => setTorrentServerMediaBase(event.target.value)}
+                  placeholder="http://127.0.0.1:11470"
+                  spellCheck={false}
+                />
+                <small>
+                  Cómo se ve el resolver a sí mismo. Se usa para construir la ruta del medio que
+                  transmuta los MKV a HLS; si el resolver está en un contenedor, es su loopback.
                 </small>
               </div>
               {torrentServerState?.url && (

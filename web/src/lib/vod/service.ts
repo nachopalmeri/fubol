@@ -14,6 +14,7 @@ import {
 } from "../addons";
 import { listAddonRows, type AddonRow } from "./store";
 import { dedupeSources, normalizeStreams, type VodSource } from "./rank";
+import { syncTorrentServerSettings } from "./torrent";
 import { filterAvailable, validateVodSource } from "./availability";
 import { shortHash } from "../crypto";
 import { getOpenFilm, getOpenFilmMetas, OPEN_FILM_ADDON, openFilmsEnabled } from "./open-films";
@@ -258,6 +259,9 @@ export interface VodStreamsResult {
 }
 
 export async function getVodStreams(type: string, id: string): Promise<VodStreamsResult> {
+  // The resolver can be pointed at a different host from the panel, and every
+  // instance has to know about it before it builds a source list.
+  await syncTorrentServerSettings();
   const openFilm = type === "movie" ? await getOpenFilm(id) : null;
   const addons = await listAddonRows("vod");
   const unconfigured: { name: string; configureUrl: string | null }[] = [];

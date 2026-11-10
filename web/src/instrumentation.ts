@@ -29,11 +29,12 @@ export async function register(): Promise<void> {
   // the setting has to be in memory before the first stream is normalized.
   void (async () => {
     try {
-      const [{ getSetting }, { setTorrentServerBase }] = await Promise.all([
+      const [{ getSetting }, { setTorrentServerBase, setTorrentServerMediaBase }] = await Promise.all([
         import("./lib/state/settings"),
         import("./lib/vod/torrent"),
       ]);
       setTorrentServerBase(await getSetting("torrentServer"));
+      setTorrentServerMediaBase(await getSetting("torrentServerMediaBase"));
     } catch (error) {
       logger.warn("torrent_server_setting_failed", { error });
     }

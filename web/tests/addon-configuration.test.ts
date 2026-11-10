@@ -123,14 +123,32 @@ describe("P2P streams with the local streaming server", () => {
     expect(sources[0]?.viaTorrent).toBe(true);
   });
 
-  it("skips containers no browser can decode", () => {
+  it("skips containers no browser can decode when there is no resolver", () => {
     // Joining a swarm only to discover it is Matroska costs tens of seconds.
+    const previous = process.env.FUBOL_TORRENT_SERVER;
+    delete process.env.FUBOL_TORRENT_SERVER;
+    try {
+      const sources = normalizeStreams(addon, [
+        { name: "a", title: "Movie 1080p x265 HEVC MKV", infoHash: "a".repeat(40), fileIdx: 0 },
+        { name: "b", title: "Movie 1080p AV1 mkv", infoHash: "b".repeat(40), fileIdx: 0 },
+        { name: "c", title: "Movie 720p XviD avi", infoHash: "c".repeat(40), fileIdx: 0 },
+      ]);
+      expect(sources).toEqual([]);
+    } finally {
+      process.env.FUBOL_TORRENT_SERVER = previous;
+    }
+  });
+
+  it("asks the resolver to remux them when there is one", () => {
+    // The streaming server can turn MKV/HEVC into fragmented MP4, which is the
+    // difference between "no source" and "a title that plays".
     const sources = normalizeStreams(addon, [
       { name: "a", title: "Movie 1080p x265 HEVC MKV", infoHash: "a".repeat(40), fileIdx: 0 },
-      { name: "b", title: "Movie 1080p AV1 mkv", infoHash: "b".repeat(40), fileIdx: 0 },
-      { name: "c", title: "Movie 720p XviD avi", infoHash: "c".repeat(40), fileIdx: 0 },
     ]);
-    expect(sources).toEqual([]);
+    expect(sources).toHaveLength(1);
+    expect(sources[0]?.transcoded).toBe(true);
+    expect(sources[0]?.url).toContain("/hlsv2/");
+    expect(sources[0]?.url).toContain(encodeURIComponent(`http://127.0.0.1:11470/${"a".repeat(40)}/0`));
   });
 
   it("ranks a well-seeded MP4/H.264 release above a bare one", () => {

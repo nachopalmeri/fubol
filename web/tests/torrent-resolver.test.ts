@@ -66,12 +66,26 @@ describe("torrent resolver", () => {
     expect(sources[0]!.viaTorrent).toBe(true);
   });
 
-  it("drops releases a browser could never decode", () => {
+  it("drops releases a browser could never decode, unless a resolver can remux them", () => {
+    const mkv = [{ infoHash: HASH, title: "Torrentio 2160p x265 HEVC", fileIdx: 0 }];
+    // Without a resolver there is nothing to play: a browser cannot open a
+    // torrent, and the server is what turns MKV into something playable.
+    setTorrentServerBase(undefined);
+    expect(
+      normalizeStreams(
+        { id: "torrentio", name: "Torrentio", kind: "vod", url: "https://torrentio.strem.fun/manifest.json" },
+        mkv,
+      ),
+    ).toEqual([]);
+    // With one, the release is remuxed to HLS instead of being discarded.
+    setTorrentServerBase(base);
     const sources = normalizeStreams(
       { id: "torrentio", name: "Torrentio", kind: "vod", url: "https://torrentio.strem.fun/manifest.json" },
-      [{ infoHash: HASH, title: "Torrentio 2160p x265 HEVC", fileIdx: 0 }],
+      mkv,
     );
-    expect(sources).toEqual([]);
+    expect(sources).toHaveLength(1);
+    expect(sources[0]?.transcoded).toBe(true);
+    expect(sources[0]?.url).toContain("/hlsv2/");
   });
 
   it("drops the torrent entirely when no resolver is configured", () => {

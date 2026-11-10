@@ -32,6 +32,8 @@ export const GET = route("vod_streams", async (request) => {
       cached: source.cached,
       /** Served from the swarm: the first play can take up to a minute. */
       viaTorrent: source.viaTorrent === true,
+      /** The release had to be remuxed to HLS by the streaming server. */
+      transcoded: source.transcoded === true,
       spanish: source.spanish,
       filename: source.filename,
       score: source.score,

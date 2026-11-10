@@ -81,6 +81,9 @@ services:
       NO_CORS: "1"
     volumes:
       - stremio-cache:/root/.stremio-server
+      # Torrentio as the source of torrent metadata. Without it the server can
+      # only serve hashes it already knows.
+      - ./config/torrserver/config.json:/root/.stremio-server/config.json:ro
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:11470/settings >/dev/null 2>&1 || exit 1"]
       interval: 20s

@@ -1,0 +1,10 @@
+{
+  "port": 11470,
+  "torrentio": "https://torrentio.strem.fun",
+  "torrents": {
+    "torrentio": {
+      "enabled": true,
+      "url": "https://torrentio.strem.fun"
+    }
+  }
+}

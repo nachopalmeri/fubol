@@ -1,6 +1,6 @@
 import { json, readJson, requireAdmin, route } from "@/lib/api";
 import { getSetting, setSetting } from "@/lib/state/settings";
-import { setTorrentServerBase, torrentServerBase } from "@/lib/vod/torrent";
+import { setTorrentServerBase, setTorrentServerMediaBase, torrentServerBase } from "@/lib/vod/torrent";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,8 +15,10 @@ export const dynamic = "force-dynamic";
 export const GET = route("admin_torrent_server_get", async () => {
   await requireAdmin();
   const stored = await getSetting("torrentServer");
+  const mediaBase = await getSetting("torrentServerMediaBase");
   return json({
     url: stored ?? torrentServerBase() ?? null,
+    mediaBase: mediaBase ?? null,
     fromEnv: Boolean(process.env.FUBOL_TORRENT_SERVER?.trim()),
     enabled: Boolean(torrentServerBase()),
   });
@@ -24,8 +26,27 @@ export const GET = route("admin_torrent_server_get", async () => {
 
 export const POST = route("admin_torrent_server_set", async (request) => {
   await requireAdmin();
-  const body = await readJson<{ url?: string }>(request);
+  const body = await readJson<{ url?: string; mediaBase?: string }>(request);
   const raw = (body.url ?? "").trim();
+
+  // The address the resolver uses for itself, used to build the media path of
+  // the HLS endpoint. It is the resolver's own view of itself, not the public
+  // one the app reaches it at.
+  if (typeof body.mediaBase === "string") {
+    const media = body.mediaBase.trim();
+    if (media) {
+      try {
+        const parsed = new URL(media);
+        if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+          return json({ error: "La dirección interna tiene que ser http o https" }, { status: 400 });
+        }
+      } catch {
+        return json({ error: "La dirección interna no es una URL válida" }, { status: 400 });
+      }
+    }
+    await setSetting("torrentServerMediaBase", media || null);
+    setTorrentServerMediaBase(media || undefined);
+  }
 
   if (!raw) {
     await setSetting("torrentServer", null);

@@ -74,6 +74,27 @@ export default function VodWatch({
     return () => controller.abort();
   }, [type, id, nonce]);
 
+  // The shared history is what lets the family resume on another device.
+  // It has to be declared before any early return: hooks cannot be
+  // conditional, and React throws when the count changes between renders.
+  const reportProgress = useCallback(
+    (position: number, duration: number) => {
+      // For a series the progress belongs to the episode inside the series, so
+      // the rail can show "S02E03 · 40%".
+      const payload =
+        type === "series"
+          ? { type, id: seriesId ?? id, episode: id, name: title, poster, position, duration }
+          : { type, id, name: title, poster, position, duration };
+      void fetch("/api/progress", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload),
+        keepalive: true,
+      }).catch(() => undefined);
+    },
+    [type, id, seriesId, title, poster],
+  );
+
   if (loading) {
     return (
       <div className="watch-loading">
@@ -179,25 +200,6 @@ export default function VodWatch({
   }));
 
   const best = data.sources[0];
-
-  // The shared history is what lets the family resume on another device.
-  const reportProgress = useCallback(
-    (position: number, duration: number) => {
-      // For a series the progress belongs to the episode inside the series, so
-      // the rail can show "S02E03 · 40%".
-      const payload =
-        type === "series"
-          ? { type, id: seriesId ?? id, episode: id, name: title, poster, position, duration }
-          : { type, id, name: title, poster, position, duration };
-      void fetch("/api/progress", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(payload),
-        keepalive: true,
-      }).catch(() => undefined);
-    },
-    [type, id, seriesId, title, poster],
-  );
 
   return (
     <div className="watch">

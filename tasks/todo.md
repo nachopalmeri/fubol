@@ -2,6 +2,17 @@
 
 Actualizado: 2026-11-10
 
+## P2P reproducible sin debrid (2026-11-10, noche)
+- [x] **Camino gratis montado y verificado**: `stremio/server:v4.22.5` (el servidor de streaming de Stremio, el mismo mecanismo de Stremio y Nuvio) levanta el `infoHash` de los addons y lo re-sirve por HTTP. Con un túnel de Cloudflare sin cuenta queda alcanzable desde Vercel.
+- [x] **Los releases MKV/HEVC ahora se remuxean**: la app pide la variante HLS del resolver (`/hlsv2/...&profile=h264`) y el servidor transcodifica a MP4 fragmentado. Antes se descartaban por ser "no reproducibles en el navegador", que era la razón por la que Torrentio no servía para nada ahí.
+- [x] Verificado en producción: *The Shawshank Redemption* reproduciéndose en 1920x1038 desde P2P (playlist de 900 KB + segmentos de 1,2 MB en 1,9 s), con la app sirviendo todo desde Vercel.
+- [x] `scripts/torrent-resolver.mjs`: levanta el contenedor, publica el túnel **desprendido** (sobrevive a la salida del script) y publica la dirección en el estado de la app. Documentado en `docs/RESOLVER_TORRENTS.md`.
+- [x] La dirección del resolver vive en el estado y se relee en cada request (`syncTorrentServerSettings`): leerla solo al arrancar dejaba a las instancias viejas sin resolver.
+- [x] Panel: campo "Resolver de torrents" (dirección pública) y "Dirección interna del resolver", con prueba de alcance.
+- [ ] **El túnel rápido cambia de URL en cada reinicio**: hay que volver a correr el script. Para una dirección fija hace falta un túnel con cuenta (Cloudflare/Tailscale).
+- [ ] El resolver corre en esta PC, así que **el VOD P2P necesita la PC encendida**; el fútbol, el catálogo y los subtítulos no.
+- [ ] Cuenta de TorBox: el alta la bloquea el captcha de Cloudflare para navegadores automatizados (con un navegador real, `api.torbox.app/v1/api/user/auth` devolvió 200 y llegó el mail de confirmación). Con el token, el VOD funciona sin la PC.
+
 ## Paridad con Nuvio: "seguir viendo" (2026-11-10, noche)
 - [x] El progreso se guarda en el **estado compartido**, no en el navegador: el reproductor lo reporta cada 15 s, la página de la película y la del episodio reanudan desde ahí (gana el dato más nuevo entre navegador y servidor) y la home muestra un renglón "Seguir viendo" con póster, barra de progreso y porcentaje.
 - [x] El histórico es **por espectador**: el admin no ve lo que miró la familia y cada link tiene el suyo (`scope` = código del link).

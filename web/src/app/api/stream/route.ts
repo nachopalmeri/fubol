@@ -8,6 +8,7 @@ import { getSession } from "@/lib/auth";
 import { torrentServerBase } from "@/lib/vod/torrent";
 import { getStreams } from "@/lib/addons";
 import { getLiveSource } from "@/lib/live/sources";
+import { syncTorrentServerSettings } from "@/lib/vod/torrent";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -99,6 +100,10 @@ export async function GET(request: Request): Promise<Response> {
   // measured at 63.7 s against a cold torrent and 6.6 s once the streaming
   // server had the pieces. The ordinary 15 s budget turned every first play
   // into a 504, so the local torrent server gets a longer one.
+  // The resolver can be pointed at a different host from the panel: the
+  // instance that serves the stream has to know it before it can tell that a
+  // torrent URL needs the long budget.
+  await syncTorrentServerSettings();
   const base = torrentServerBase();
   const viaTorrent = base !== undefined && target.startsWith(`${base}/`);
 

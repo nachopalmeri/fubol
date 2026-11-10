@@ -36,6 +36,63 @@ export function setTorrentServerBase(value: string | undefined): void {
   overrideBase = value?.trim() ? value.trim().replace(/\/+$/, "") : undefined;
 }
 
+/**
+ * How the resolver sees itself.
+ *
+ * The HLS endpoint takes the media path as a query parameter, and that path is
+ * resolved by the resolver itself, not by whoever asks for the playlist. With
+ * the containerised server that address is its own loopback.
+ */
+let mediaBase: string | undefined;
+
+export function setTorrentServerMediaBase(value: string | undefined): void {
+  mediaBase = value?.trim() ? value.trim().replace(/\/+$/, "") : undefined;
+}
+
+export function torrentServerMediaBase(): string {
+  return mediaBase ?? "http://127.0.0.1:11470";
+}
+
+/**
+ * Refreshes the resolver address from the shared state.
+ *
+ * The address lives in the state document so it can be changed from the panel
+ * without a redeploy, but the app runs on many instances: reading it only at
+ * boot would leave every instance that started before the change without a
+ * resolver. The state read is memoized, so this costs nothing per request.
+ */
+let lastSync = 0;
+
+export async function syncTorrentServerSettings(): Promise<void> {
+  const now = Date.now();
+  if (now - lastSync < 3_000) return;
+  lastSync = now;
+  try {
+    const { getSetting } = await import("../state/settings");
+    setTorrentServerBase(await getSetting("torrentServer"));
+    setTorrentServerMediaBase(await getSetting("torrentServerMediaBase"));
+  } catch {
+    // Keep whatever is in memory; the state read can fail on a cold start.
+  }
+}
+
+/**
+ * Playlist URL for a torrent when the release is not playable as it is.
+ *
+ * Torrent releases are MKV with HEVC or x265, which no browser decodes. The
+ * streaming server remuxes them to fragmented MP4 over HLS, which is the same
+ * thing Stremio does with the very same addons. Without it the title is
+ * simply not offered: a browser cannot open a torrent, and pretending
+ * otherwise is how you get a player that never starts.
+ */
+export function resolveTorrentHlsUrl(infoHash: string | undefined, fileIdx: number | undefined): string | null {
+  const base = torrentServerBase();
+  if (!base || !infoHash || !INFO_HASH.test(infoHash)) return null;
+  const index = Number.isInteger(fileIdx) && (fileIdx as number) >= 0 ? (fileIdx as number) : 0;
+  const media = `${torrentServerMediaBase()}/${infoHash.toLowerCase()}/${index}`;
+  return `${base}/hlsv2/fubol/video0.m3u8?mediaURL=${encodeURIComponent(media)}&profile=h264&maxWidth=1280`;
+}
+
 export function torrentResolverEnabled(): boolean {
   return torrentServerBase() !== undefined;
 }
