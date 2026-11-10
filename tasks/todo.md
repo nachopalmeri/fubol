@@ -11,7 +11,7 @@ Actualizado: 2026-11-10
 - [x] Panel: campo "Resolver de torrents" (dirección pública) y "Dirección interna del resolver", con prueba de alcance.
 - [ ] **El túnel rápido cambia de URL en cada reinicio**: hay que volver a correr el script. Para una dirección fija hace falta un túnel con cuenta (Cloudflare/Tailscale).
 - [ ] El resolver corre en esta PC, así que **el VOD P2P necesita la PC encendida**; el fútbol, el catálogo y los subtítulos no.
-- [ ] Cuenta de TorBox: el alta la bloquea el captcha de Cloudflare para navegadores automatizados (con un navegador real, `api.torbox.app/v1/api/user/auth` devolvió 200 y llegó el mail de confirmación). Con el token, el VOD funciona sin la PC.
+- [ ] Cuenta de TorBox: **el plan gratis NO incluye API** (la cuenta muestra "Upgrade to Access API"), así que la key cuesta $3/mes (ESSENTIAL). La cuenta sí quedó creada y confirmada (`api.torbox.app/v1/api/user/auth` devolvió 200 con un navegador real de escritorio; con navegador automatizado Cloudflare devuelve 403). Con el token, el VOD funciona sin la PC.
 
 ## Paridad con Nuvio: "seguir viendo" (2026-11-10, noche)
 - [x] El progreso se guarda en el **estado compartido**, no en el navegador: el reproductor lo reporta cada 15 s, la página de la película y la del episodio reanudan desde ahí (gana el dato más nuevo entre navegador y servidor) y la home muestra un renglón "Seguir viendo" con póster, barra de progreso y porcentaje.

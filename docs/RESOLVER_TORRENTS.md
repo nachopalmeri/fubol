@@ -71,6 +71,28 @@ ni el resolver. Se pega en el panel, en **Resolver P2P con tu cuenta**, y la
 app arma el manifest configurado sola. Con eso el VOD funciona aunque la PC
 esté apagada.
 
-La cuenta de TorBox se crea en <https://torbox.app> (el plan gratuito no pide
-tarjeta). El alta pide pasar el captcha de Cloudflare en un navegador de
-escritorio: con un navegador automatizado el proveedor lo rechaza.
+Precios (verificados en `torbox.app/pricing` y en los sitios de cada servicio):
+
+| Servicio | Costo | Nota |
+| --- | --- | --- |
+| **Resolver propio** | **$0** | Lo que está montado y verificado. Requiere la PC encendida. |
+| TorBox ESSENTIAL | **$3/mes** | El plan **gratis no incluye API**: la cuenta muestra "Upgrade to Access API" y sin key no hay manifest configurado. |
+| Premiumize | pago único (~$10) | Sin renewal; la key dura. |
+| Real-Debrid / AllDebrid | ~$4-5/mes | Sin límite de ancho de banda. |
+
+## Notas sobre el alta de TorBox
+
+La cuenta se puede crear en <https://torbox.app> con el plan gratuito. Dos
+detalles que costaron tiempo:
+
+- **El captcha de Cloudflare rechaza los navegadores automatizados.** Con
+  Playwright o con el navegador del agente, `POST /v1/api/user/auth` devuelve
+  **403** y el alta dice "You are not permitted to authenticate". Con un
+  navegador de escritorio real (Edge o Chrome con tu perfil) el mismo request
+  devuelve **200** y llega el mail de confirmación.
+- El alta pide confirmar el mail. Con la cuenta confirmada, el login funciona
+  y el panel muestra el plan; la API key requiere el plan de $3.
+
+La contraseña de la cuenta que quedó creada está en
+`.secrets/torbox.password` (ignorado por git).
+

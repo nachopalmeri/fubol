@@ -14,7 +14,7 @@ import {
 } from "../addons";
 import { listAddonRows, type AddonRow } from "./store";
 import { dedupeSources, normalizeStreams, type VodSource } from "./rank";
-import { syncTorrentServerSettings } from "./torrent";
+import { syncTorrentServerSettings, torrentServerBase } from "./torrent";
 import { filterAvailable, validateVodSource } from "./availability";
 import { shortHash } from "../crypto";
 import { getOpenFilm, getOpenFilmMetas, OPEN_FILM_ADDON, openFilmsEnabled } from "./open-films";
@@ -358,14 +358,18 @@ export async function probeVodStreams(type: string, id: string): Promise<VodProb
 
   const sources: VodSource[] = [];
   let p2pOnly = 0;
+  const resolverBase = torrentServerBase();
   for (const result of results) {
     p2pOnly = Math.max(p2pOnly, result.p2p);
     // Validating one candidate is enough to know whether the addon is really
-    // serving playable files; the title page lists them all.
-    const inspected = await mapLimit(result.direct.slice(0, 2), 2, async (source) => ({
-      source,
-      kind: await validateVodSource(source),
-    }));
+    // serving playable files; the title page lists them all. Sources that come
+    // from our own resolver are trusted without a probe: asking it for a
+    // playlist means joining a swarm, and the browse sweep does that for
+    // dozens of titles.
+    const inspected = await mapLimit(result.direct.slice(0, 2), 2, async (source) => {
+      if (resolverBase && source.url.startsWith(`${resolverBase}/`)) return { source, kind: "hls" as const };
+      return { source, kind: await validateVodSource(source) };
+    });
     for (const item of inspected) {
       if (item.kind) sources.push(item.source);
     }
