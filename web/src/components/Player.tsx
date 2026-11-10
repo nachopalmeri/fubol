@@ -28,7 +28,14 @@ export interface PlayerSource {
   kind: "hls" | "mp4";
   note?: string;
   score?: number;
+  /** Seconds the origin's playlist edge sits behind the wall clock. */
   edgeAgeS?: number | null;
+  /** Whether `edgeAgeS` can be shown as a delay. See lib/live/playlist.ts. */
+  edgeTrust?: "measured" | "extrapolated" | "implausible" | "none";
+  /** Origin segment length: every live buffer figure is derived from it. */
+  targetDuration?: number | null;
+  /** Playback goes through the local ffmpeg relay, which adds its own delay. */
+  relayed?: boolean;
   height?: number | null;
   /** Same-upload caption assets, not a claim of perfect human-verified alignment. */
   matchedSubtitleIds?: string[];
@@ -99,6 +106,8 @@ export default function Player({
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const stallTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastTapRef = useRef<{ at: number; x: number }>({ at: 0, x: 0 });
+  /** A touch that only revealed the controls must not also toggle playback. */
+  const touchRevealedRef = useRef(false);
   const subTouchedRef = useRef(false);
   const onEndedRef = useRef(onEnded);
   onEndedRef.current = onEnded;
@@ -111,7 +120,10 @@ export default function Player({
   const [error, setError] = useState<string | null>(null);
   const [levels, setLevels] = useState<{ index: number; height: number | null; bitrate: number }[]>([]);
   const [currentLevel, setCurrentLevel] = useState(-1);
+  /** Seconds the player sits behind the playlist edge (our own buffer). */
   const [latency, setLatency] = useState<number | null>(null);
+  /** Seconds behind the wall clock for the frame on screen, when trustworthy. */
+  const [wallDelay, setWallDelay] = useState<number | null>(null);
   const [controls, setControls] = useState(true);
   const [panel, setPanel] = useState<Panel>(null);
   const [muted, setMuted] = useState(false);
@@ -129,7 +141,54 @@ export default function Player({
 
   indexRef.current = sourceIndex;
   const source = sources[sourceIndex];
-  const edgeLabel = source?.edgeAgeS != null ? `~${Math.round(source.edgeAgeS)} s` : null;
+
+  /**
+   * The delay the family cares about is "how far behind the stadium am I",
+   * which is the origin's publish lag plus our own buffer. Neither number
+   * alone is that answer, and the origin's half is only knowable when its
+   * PROGRAM-DATE-TIME can be trusted — so this returns what can be proven and
+   * says so when it cannot.
+   */
+  const delay = useMemo(() => {
+    const trusted = source?.edgeTrust === "measured" || source?.edgeTrust === "extrapolated";
+    const originS = trusted && source?.edgeAgeS != null ? source.edgeAgeS : null;
+    const bufferS = latency;
+    const totalS =
+      wallDelay != null
+        ? wallDelay
+        : originS != null && bufferS != null
+          ? originS + bufferS
+          : null;
+    return {
+      originS,
+      bufferS,
+      totalS,
+      /** True when totalS came from PDT on the playing frame, not a sum. */
+      measuredEnd: wallDelay != null,
+      approximate: source?.edgeTrust === "extrapolated",
+      /** The origin reports nothing usable: only our own buffer is knowable. */
+      originUnknown: !trusted,
+      relayed: source?.relayed === true,
+    };
+  }, [source?.edgeTrust, source?.edgeAgeS, source?.relayed, latency, wallDelay]);
+
+  const delayChip = delay.totalS != null
+    ? `${Math.round(delay.totalS)} s de delay${delay.measuredEnd ? "" : " aprox."}`
+    : delay.bufferS != null
+      ? `${Math.round(delay.bufferS)} s de buffer`
+      : null;
+
+  const delayDetail = (() => {
+    const parts: string[] = [];
+    if (delay.originS != null) {
+      parts.push(`origen ${Math.round(delay.originS)} s${delay.approximate ? " (estimado)" : ""}`);
+    } else if (delay.originUnknown) {
+      parts.push("el origen no informa su delay");
+    }
+    if (delay.bufferS != null) parts.push(`buffer del player ${Math.round(delay.bufferS)} s`);
+    if (delay.relayed) parts.push("más el re-encode local");
+    return parts.length ? parts.join(" · ") : null;
+  })();
 
   const activeSubtitle = useMemo(
     () => subtitles.find((track) => track.id === activeSub) ?? null,
@@ -176,6 +235,7 @@ export default function Player({
   /* ------------------------- playback bootstrap ------------------------- */
   const sourceUrl = source?.url;
   const sourceKind = source?.kind;
+  const sourceTargetDuration = source?.targetDuration ?? null;
 
   useEffect(() => {
     const video = videoRef.current;
@@ -246,24 +306,37 @@ export default function Player({
         return;
       }
 
+      // Segment length decides every live buffer number. The previous config
+      // hard-coded values tuned for the relay's 1 s segments and then applied
+      // them to every origin: against a 6 s playlist it asked to sit 12 s
+      // behind the edge while buffering only 8 s, so it ran permanently on the
+      // edge of its own buffer. HLS also wants at least three target durations
+      // of headroom, which 12 s against 6 s segments does not give.
+      const segmentS = sourceTargetDuration && sourceTargetDuration > 0 ? sourceTargetDuration : 2;
+      const liveSyncS = Math.min(15, Math.max(3, segmentS * 2.5));
+      const liveBufferS = Math.max(liveSyncS + segmentS * 2, segmentS * 4);
+
       hls = new Hls({
-        // The relay playlist is regular HLS with 1 s segments, not LL-HLS.
-        // lowLatencyMode forces aggressive catch-up on non-LL playlists and
-        // costs frames; keep it off and stay near the edge with liveSync.
+        // Regular HLS, not LL-HLS: lowLatencyMode forces aggressive catch-up on
+        // non-LL playlists and costs frames.
         lowLatencyMode: false,
-        liveSyncDurationCount: mode === "live" ? 2 : 1,
-        liveMaxLatencyDurationCount: mode === "live" ? 5 : 4,
-        maxLiveSyncPlaybackRate: 1.08,
-        backBufferLength: mode === "live" ? 0 : 90,
-        maxBufferLength: mode === "live" ? 8 : 30,
-        maxMaxBufferLength: mode === "live" ? 12 : 60,
+        // Absolute seconds rather than a segment count, so the target does not
+        // silently change meaning when the origin's segment length changes.
+        liveSyncDuration: mode === "live" ? liveSyncS : undefined,
+        liveMaxLatencyDuration: mode === "live" ? liveSyncS + segmentS * 4 : undefined,
+        // hls.js is now the only component adjusting playback rate. A second
+        // governor in this file used to fight it for the whole match.
+        maxLiveSyncPlaybackRate: 1.05,
+        backBufferLength: mode === "live" ? 30 : 90,
+        maxBufferLength: mode === "live" ? liveBufferS : 30,
+        maxMaxBufferLength: mode === "live" ? liveBufferS * 2 : 60,
         startFragPrefetch: true,
         testBandwidth: false,
         enableWorker: true,
         abrEwmaDefaultEstimate: 3_000_000,
-        fragLoadingMaxRetry: 4,
-        manifestLoadingMaxRetry: 3,
-        levelLoadingMaxRetry: 4,
+        fragLoadingMaxRetry: 6,
+        manifestLoadingMaxRetry: 4,
+        levelLoadingMaxRetry: 6,
         startPosition: mode === "vod" && resumeAt > 5 ? resumeAt : -1,
       });
       hlsRef.current = hls;
@@ -328,38 +401,50 @@ export default function Player({
       video.removeAttribute("src");
       video.load();
     };
-  }, [sourceUrl, sourceKind, sourceIndex, retryNonce, mode, storageKey]);
+  }, [sourceUrl, sourceKind, sourceTargetDuration, sourceIndex, retryNonce, mode, storageKey]);
 
-  /* --------------------------- latency governor -------------------------- */
+  /* -------------------------- delay measurement -------------------------
+   * Three different quantities used to be conflated into one "latency" chip:
+   * how far the player sits behind the playlist edge, how far the origin's
+   * edge sits behind the wall clock, and the sum the viewer actually
+   * experiences. They are now measured and labelled separately, and the
+   * player no longer adjusts playbackRate itself — hls.js already does that,
+   * and the second governor fought it for ninety minutes straight.
+   * ------------------------------------------------------------------- */
   useEffect(() => {
     if (mode !== "live") return;
     const timer = setInterval(() => {
       const video = videoRef.current;
       const hls = hlsRef.current;
       if (!video) return;
-      let value: number | null = null;
-      const reported = hls ? (hls as unknown as { latency?: number }).latency : undefined;
-      if (typeof reported === "number" && Number.isFinite(reported) && reported >= 0) {
-        value = reported;
-      } else if (hls && typeof hls.liveSyncPosition === "number" && Number.isFinite(hls.liveSyncPosition)) {
-        value = hls.liveSyncPosition - video.currentTime;
-      } else if (video.seekable.length > 0) {
-        // Native playback (iOS Safari) and some browsers expose no latency
-        // through hls.js; the seekable edge is the live edge there.
-        const edge = video.seekable.end(video.seekable.length - 1);
-        if (Number.isFinite(edge)) value = edge - video.currentTime;
-      } else if (video.buffered.length > 0) {
-        // Last resort: distance from the newest buffered media. Close to the
-        // live edge for a live playlist, so it still beats hiding the chip.
-        const edge = video.buffered.end(video.buffered.length - 1);
-        if (Number.isFinite(edge)) value = edge - video.currentTime;
-      }
-      if (value !== null) setLatency(Math.max(0, Math.round(value * 10) / 10));
 
-      if (!video.paused && value !== null) {
-        if (value > 8 && value < 45) video.playbackRate = 1.07;
-        else if (value < 1.2 && video.playbackRate > 1) video.playbackRate = 0.98;
-        else if (value >= 2 && value <= 8 && video.playbackRate !== 1) video.playbackRate = 1;
+      let behindEdge: number | null = null;
+      const reported = hls?.latency;
+      if (typeof reported === "number" && Number.isFinite(reported) && reported >= 0) {
+        behindEdge = reported;
+      } else if (hls && typeof hls.liveSyncPosition === "number" && Number.isFinite(hls.liveSyncPosition)) {
+        behindEdge = hls.liveSyncPosition - video.currentTime;
+      } else if (video.seekable.length > 0) {
+        // Native playback (iOS Safari) exposes no latency through hls.js; the
+        // seekable edge is the live edge there.
+        const edge = video.seekable.end(video.seekable.length - 1);
+        if (Number.isFinite(edge)) behindEdge = edge - video.currentTime;
+      } else if (video.buffered.length > 0) {
+        const edge = video.buffered.end(video.buffered.length - 1);
+        if (Number.isFinite(edge)) behindEdge = edge - video.currentTime;
+      }
+      if (behindEdge !== null) setLatency(Math.max(0, Math.round(behindEdge * 10) / 10));
+
+      // hls.js resolves the wall-clock date of the frame on screen from
+      // PROGRAM-DATE-TIME. When the origin stamps it honestly this is the only
+      // true end-to-end number available in the browser; when it re-stamps at
+      // republish time the server already told us not to trust it.
+      const playingDate = hls?.playingDate ?? null;
+      if (playingDate instanceof Date && Number.isFinite(playingDate.getTime())) {
+        const wall = (Date.now() - playingDate.getTime()) / 1000;
+        setWallDelay(wall > 0 && wall < 3600 ? Math.round(wall * 10) / 10 : null);
+      } else {
+        setWallDelay(null);
       }
     }, 2000);
     return () => {
@@ -532,7 +617,9 @@ export default function Player({
     }
     video.playbackRate = 1;
     void video.play().catch(() => undefined);
-    setLatency(0);
+    // The readout is not reset to zero here: it was a cosmetic lie for two
+    // seconds until the next measurement, in a screen whose job is to report
+    // the real delay.
   };
 
   const toggleMute = () => {
@@ -712,9 +799,22 @@ export default function Player({
   };
 
   const onPointerUp = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (mode !== "vod") return;
     const target = event.target as HTMLElement;
     if (target.closest("button, input, .player-panel")) return;
+
+    // Touch devices never fire mousemove, so hidden controls could only be
+    // brought back by tapping the video — which toggled play/pause instead.
+    // On a phone, the family's main device, that paused the match.
+    if (event.pointerType !== "mouse") {
+      if (!controls) {
+        revealControls();
+        touchRevealedRef.current = true;
+      } else {
+        touchRevealedRef.current = false;
+      }
+    }
+
+    if (mode !== "vod") return;
     const now = Date.now();
     const previous = lastTapRef.current;
     if (now - previous.at < 320) {
@@ -796,8 +896,16 @@ export default function Player({
           if (!hlsRef.current) failover.current("El video no se pudo reproducir");
         }}
         onClick={() => {
-          if (panel) setPanel(null);
-          else togglePlay();
+          if (panel) {
+            setPanel(null);
+            return;
+          }
+          // The tap that brought the controls back must not also pause.
+          if (touchRevealedRef.current) {
+            touchRevealedRef.current = false;
+            return;
+          }
+          togglePlay();
         }}
         onDoubleClick={() => void toggleFullscreen()}
       />
@@ -807,7 +915,11 @@ export default function Player({
       {status === "loading" && (
         <div className="player-center">
           <div className="spinner" />
-          <p className="player-hint">{edgeLabel ? `Conectando · ${edgeLabel} de delay` : "Conectando con la señal…"}</p>
+          <p className="player-hint">
+            {delay.originS != null
+              ? `Conectando · el origen va ~${Math.round(delay.originS)} s detrás`
+              : "Conectando con la señal…"}
+          </p>
         </div>
       )}
 
@@ -863,7 +975,11 @@ export default function Player({
               <i className="live-dot" /> EN VIVO
             </span>
           ) : null}
-          {live && latency !== null ? <span className="latency-chip">{Math.round(latency)} s</span> : null}
+          {live && delayChip ? (
+            <span className="latency-chip" title={delayDetail ?? undefined}>
+              {delayChip}
+            </span>
+          ) : null}
           {source ? <span className="source-chip">{source.label}</span> : null}
         </div>
       </div>
@@ -923,7 +1039,7 @@ export default function Player({
 
           <div className="player-spacer" />
 
-          {live && edgeLabel ? <span className="edge-chip">delay {edgeLabel}</span> : null}
+          {live && delayDetail ? <span className="edge-chip">{delayDetail}</span> : null}
 
           <button
             className={`icon-btn ${activeSub ? "is-on" : ""}`}

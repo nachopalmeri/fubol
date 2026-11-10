@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { env } from "./env";
 import { UpstreamError } from "./http";
 import { logger } from "./logger";
 import type { Session } from "./auth";
@@ -50,10 +51,22 @@ export async function readJson<T>(request: Request): Promise<T> {
   }
 }
 
+/**
+ * Caller identity for rate limiting. Forwarded headers are only read when a
+ * trusted reverse proxy is declared, because otherwise a client can set
+ * `x-forwarded-for` itself and get a fresh bucket on every request.
+ */
 export function clientIp(request: Request): string {
-  const forwarded = request.headers.get("x-forwarded-for");
-  if (forwarded) return forwarded.split(",")[0]?.trim() || "unknown";
-  return request.headers.get("x-real-ip") ?? "unknown";
+  if (env.trustProxyHeaders) {
+    const forwarded = request.headers.get("x-forwarded-for");
+    if (forwarded) return forwarded.split(",")[0]?.trim() || "unknown";
+    const real = request.headers.get("x-real-ip")?.trim();
+    if (real) return real;
+  }
+  // Without a trusted proxy there is no per-client address available to a
+  // route handler, so every caller shares one bucket. That is strictly safer
+  // than a bucket the caller chooses: the limit still holds, it is just shared.
+  return "shared";
 }
 
 export async function requireSession(permission?: "live" | "vod"): Promise<Session> {

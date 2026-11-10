@@ -1,21 +1,52 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
+
+/** True on Vercel, where only `/tmp` is writable and it is per-instance. */
+export const serverless = Boolean(process.env.VERCEL);
 
 /** Everything mutable lives outside the build tree. */
 export const dataDir = path.resolve(
   /*turbopackIgnore: true*/
-  process.env.FUBOL_DATA_DIR ?? path.join(process.cwd(), "data"),
+  process.env.FUBOL_DATA_DIR ??
+    (serverless ? path.join(os.tmpdir(), "fubol") : path.join(process.cwd(), "data")),
 );
 
 export function subdir(name: string): string {
   const dir = path.join(dataDir, name);
-  fs.mkdirSync(dir, { recursive: true });
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+  } catch {
+    // Read-only filesystem (serverless without /tmp access): callers that need
+    // durable data use the state backend, not this directory.
+  }
   return dir;
 }
 
 export function ensureDataDir(): void {
-  fs.mkdirSync(dataDir, { recursive: true });
+  try {
+    fs.mkdirSync(dataDir, { recursive: true });
+  } catch {
+    // See subdir(): a filesystem error here must not take the app down.
+  }
+}
+
+/**
+ * Vercel (and some shells) export `TZ` in POSIX form (`:UTC`). Node's own
+ * clock accepts that, but `Intl.DateTimeFormat` throws `RangeError: Invalid
+ * time zone specified` — which crashed the first render of any fixture card in
+ * production. Normalize once, and fall back rather than take a page down.
+ */
+export function safeTimeZone(raw: string | undefined, fallback = "America/Argentina/Buenos_Aires"): string {
+  const value = (raw ?? "").trim().replace(/^:/, "");
+  if (!value) return fallback;
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: value });
+    return value;
+  } catch {
+    return fallback;
+  }
 }
 
 export const env = {
@@ -31,6 +62,17 @@ export const env = {
   },
   get insecureCookies(): boolean {
     return process.env.FUBOL_INSECURE_COOKIES === "1";
+  },
+  /**
+   * Whether `x-forwarded-*` may be believed. The container publishes port 3001
+   * directly, so anyone on the LAN can reach the app without passing through
+   * Caddy and set these headers themselves: trusting them unconditionally let
+   * a client forge its own IP and walk around the login rate limit, and let a
+   * poisoned Host redirect a family link somewhere else. Enable it only when
+   * a reverse proxy you control is the single way in.
+   */
+  get trustProxyHeaders(): boolean {
+    return process.env.FUBOL_TRUST_PROXY === "1";
   },
   get ffmpegPath(): string {
     return process.env.FFMPEG_PATH?.trim() || "ffmpeg";
@@ -49,7 +91,7 @@ export const env = {
     return process.env.FUBOL_LOCALE?.trim() || "es-AR";
   },
   get timezone(): string {
-    return process.env.TZ?.trim() || "America/Argentina/Buenos_Aires";
+    return safeTimeZone(process.env.TZ);
   },
 };
 
@@ -67,7 +109,12 @@ export function getSecret(): string {
     // create below
   }
   const generated = Buffer.from(crypto.getRandomValues(new Uint8Array(48))).toString("hex");
-  fs.writeFileSync(file, generated, { mode: 0o600 });
+  try {
+    fs.writeFileSync(file, generated, { mode: 0o600 });
+  } catch {
+    // Ephemeral filesystem: the generated secret lives for this instance only.
+    // Deployments that need stable sessions set FUBOL_SECRET instead.
+  }
   return generated;
 }
 
@@ -88,6 +135,10 @@ export function getAdminPassword(): string {
     .toString("base64url")
     .replace(/[-_]/g, "")
     .slice(0, 16);
-  fs.writeFileSync(file, generated + "\n", { mode: 0o600 });
+  try {
+    fs.writeFileSync(file, generated + "\n", { mode: 0o600 });
+  } catch {
+    // Ephemeral filesystem: set FUBOL_ADMIN_PASSWORD in a real deployment.
+  }
   return generated;
 }

@@ -1,14 +1,23 @@
 import { Suspense } from "react";
 import Link from "next/link";
 import FixtureCard from "@/components/FixtureCard";
+import KickoffCountdown from "@/components/KickoffCountdown";
 import PosterRow from "@/components/PosterRow";
 import SearchShortcut from "@/components/SearchShortcut";
 import { requirePageSession } from "@/lib/auth";
-import { getFixtures, matchFixtureChannels, todaysFixtures, type Fixture } from "@/lib/live/fixtures";
+import {
+  formatKickoffTime,
+  getFixtures,
+  liveFixtures,
+  matchFixtureChannels,
+  mergeChannelFixtures,
+  todaysFixtures,
+  type Fixture,
+} from "@/lib/live/fixtures";
 import { getAllChannels } from "@/lib/live/sources";
 import { getHomeRows } from "@/lib/vod/service";
 import { withTimeout } from "@/lib/http";
-import { IconArrowRight, IconFilm, IconSettings } from "@/components/icons";
+import { IconArrowRight, IconFilm, IconPlay, IconSettings } from "@/components/icons";
 
 export const dynamic = "force-dynamic";
 
@@ -16,19 +25,70 @@ export default async function HomePage() {
   const session = await requirePageSession();
   const canVod = session.role === "admin" || session.permissions.includes("vod");
   const canLive = session.role === "admin" || session.permissions.includes("live");
-  const [rows, fixtures, channels] = await Promise.all([
-    canVod ? withTimeout(getHomeRows(12), 20000, "catalog").catch(() => []) : [],
-    canLive ? withTimeout(getFixtures({ daysBack: 0, daysForward: 1 }), 12000, "fixtures").catch(() => [] as Fixture[]) : [],
-    canLive ? withTimeout(getAllChannels(), 8000, "channels").catch(() => []) : [],
+  const [rowsResult, fixturesResult, channelsResult] = await Promise.allSettled([
+    canVod ? withTimeout(getHomeRows(12), 20000, "catalog") : Promise.resolve([]),
+    canLive ? withTimeout(getFixtures({ daysBack: 0, daysForward: 1 }), 12000, "fixtures") : Promise.resolve([] as Fixture[]),
+    canLive ? withTimeout(getAllChannels(), 8000, "channels") : Promise.resolve([]),
   ]);
+  const rows = rowsResult.status === "fulfilled" ? rowsResult.value : [];
+  const channels = channelsResult.status === "fulfilled" ? channelsResult.value : [];
+  // A timeout is not an empty schedule. Keeping the two apart is the only way
+  // the screen can say "se cayó el proveedor" instead of "no hay fútbol".
+  const agendaFailed = fixturesResult.status === "rejected";
+  const fixtures = mergeChannelFixtures(
+    fixturesResult.status === "fulfilled" ? fixturesResult.value : [],
+    channels,
+  );
   const metas = rows.flatMap((row) => row.metas);
   const featured = metas[0];
-  const today = todaysFixtures(fixtures).slice(0, 5);
+  const today = [...liveFixtures(fixtures), ...todaysFixtures(fixtures)]
+    .filter((fixture, index, list) => list.findIndex((item) => item.id === fixture.id) === index)
+    .slice(0, 5);
+  // The next match with a configured channel is what a family link is opened
+  // for, so it gets the hero instead of an empty welcome panel.
+  const nextMatch = today
+    .map((fixture) => matchFixtureChannels(fixture, channels))
+    .find((match) => match.channels.length > 0);
 
   return (
     <>
       <SearchShortcut />
       <main className="shell home-shell">
+        {nextMatch ? (
+          <section className="home-match" aria-labelledby="match-title">
+            <div className="home-match-copy">
+              <span className="eyebrow">
+                {nextMatch.fixture.status === "live" ? (
+                  <>
+                    <i className="live-dot" /> Se está jugando
+                  </>
+                ) : (
+                  <>Próximo partido con señal</>
+                )}
+              </span>
+              <h1 id="match-title">
+                {nextMatch.fixture.home} <span className="home-match-vs">vs</span> {nextMatch.fixture.away}
+              </h1>
+              <p>
+                {nextMatch.fixture.league} · {formatKickoffTime(nextMatch.fixture.kickoff)} h
+                {" · "}
+                <KickoffCountdown kickoff={nextMatch.fixture.kickoff} />
+                {nextMatch.inferred ? " · señal probable" : ""}
+              </p>
+              <div className="home-feature-actions">
+                {nextMatch.channels.slice(0, 2).map((channel) => (
+                  <Link key={channel.id} className="btn btn-primary" href={`/watch/live/${channel.id}`}>
+                    <IconPlay size={16} /> {channel.name.length > 24 ? `${channel.name.slice(0, 23)}…` : channel.name}
+                  </Link>
+                ))}
+                <Link className="btn btn-ghost" href="/live">
+                  Ver toda la agenda <IconArrowRight size={15} />
+                </Link>
+              </div>
+            </div>
+          </section>
+        ) : null}
+
         {featured ? (
           <section className="home-feature" aria-labelledby="feature-title">
             {featured.background || featured.poster ? (
@@ -73,7 +133,7 @@ export default async function HomePage() {
           {today.length ? <div className="fixture-grid">{today.map((fixture) => {
             const match = matchFixtureChannels(fixture, channels);
             return <FixtureCard key={fixture.id} match={match} />;
-          })}</div> : <p className="agenda-empty">No hay partidos próximos en la agenda.</p>}
+          })}</div> : agendaFailed ? <p className="agenda-empty agenda-error">No pudimos cargar la agenda: el proveedor de calendario no respondió. Los canales siguen disponibles en <Link className="text-link" href="/live">En vivo</Link>.</p> : <p className="agenda-empty">No hay partidos próximos en la agenda.</p>}
         </section>}
 
       </main>

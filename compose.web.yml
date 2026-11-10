@@ -20,18 +20,103 @@ services:
       # Fubol must reach the user's own AIOStreams container on the private
       # compose network. Addon/source creation stays admin-only.
       FUBOL_ALLOW_PRIVATE_SOURCES: ${FUBOL_ALLOW_PRIVATE_SOURCES:-1}
-      FUBOL_OPEN_FILMS: ${FUBOL_OPEN_FILMS:-0}
+      # The only VOD path that plays in a browser without a paid debrid
+      # subscription. Torrentio and AIOStreams answer a movie with 100 and 522
+      # streams respectively, every one a BitTorrent infoHash and none an HTTP
+      # URL, so without this the VOD half of the app has nothing to show.
+      # Set to 0 to turn it off.
+      FUBOL_OPEN_FILMS: ${FUBOL_OPEN_FILMS:-1}
+      # Relay segments are written once per second and read immediately. Under
+      # ./data/fubol they landed on a Windows bind mount through WSL2, the
+      # slowest filesystem available, right in the latency-critical path.
+      FUBOL_RELAY_DIR: /relay
+      # Forwarded headers are only believed when a reverse proxy we control is
+      # the single way in. Port 3001 is published directly here, so the default
+      # stays off: otherwise a LAN client can forge its own address and walk
+      # around the login rate limit.
+      FUBOL_TRUST_PROXY: ${FUBOL_TRUST_PROXY:-0}
+      # Resolves the addons' BitTorrent results into HTTP the browser can open.
+      # This is the free, self-hosted equivalent of a debrid subscription and
+      # the same mechanism Stremio and Nuvio use for these exact streams.
+      FUBOL_TORRENT_SERVER: ${FUBOL_TORRENT_SERVER:-http://stremio-server:11470}
+      # Audio-based subtitle alignment. Without it only reference-based sync
+      # (one track against another) is available.
+      SUBSYNC_URL: ${SUBSYNC_URL:-http://subsync:8080}
       TZ: America/Argentina/Buenos_Aires
     volumes:
       - ./data/fubol:/data
+    tmpfs:
+      # Ephemeral by design: these segments are regenerated on every start and
+      # must never survive a restart.
+      - /relay:rw,size=512m,mode=1777
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
       interval: 15s
       timeout: 5s
       retries: 3
       start_period: 30s
+    depends_on:
+      stremio-server:
+        condition: service_started
     logging:
       driver: json-file
       options:
         max-size: "10m"
         max-file: "3"
+
+  # Stremio's own streaming server. Joins the swarm for a given infoHash and
+  # re-serves the selected file over HTTP with Range support, which is what
+  # makes Torrentio and AIOStreams playable in a browser without paying for a
+  # debrid service. Verified with 4.22.5: HTTP 206, video/mp4, `ftyp` box.
+  stremio-server:
+    image: stremio/server:latest
+    container_name: stremio-server
+    restart: unless-stopped
+    init: true
+    # Not published to the LAN: only Fubol talks to it, over the compose
+    # network. Nothing here is reachable from outside the host.
+    expose:
+      - "11470"
+    environment:
+      NO_CORS: "1"
+    volumes:
+      - stremio-cache:/root/.stremio-server
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:11470/settings >/dev/null 2>&1 || exit 1"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "2"
+
+  # Audio-based subtitle alignment (ffsubsync behind a tiny HTTP wrapper).
+  # Completes the sync feature: reference mode compares two subtitle tracks,
+  # this one aligns a track against the film's actual audio.
+  subsync:
+    build:
+      context: ./subsync
+    container_name: fubol-subsync
+    restart: unless-stopped
+    init: true
+    expose:
+      - "8080"
+    environment:
+      TZ: America/Argentina/Buenos_Aires
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/health').status==200 else 1)\""]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "2"
+
+volumes:
+  stremio-cache:

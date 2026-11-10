@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { getAddonSubtitles, type AddonSubtitle } from "../addons";
-import { fetchUpstream, mapLimit, withTimeout } from "../http";
+import { fetchUpstream, mapLimit, UpstreamError, withTimeout } from "../http";
 import { sanitizeHeaders } from "../stream-token";
 import { shortHash } from "../crypto";
 import { subdir } from "../env";
@@ -143,7 +143,14 @@ export async function fetchSubtitleAsVtt(
   if (buffer.byteLength > 8_000_000) throw new Error("Subtítulo demasiado grande");
   const text = decodeSubtitle(buffer);
   const vtt = toVtt(text, detectFormat(res.headers.get("content-type") ?? "", url));
-  fs.writeFileSync(file, vtt, { mode: 0o600 });
+  try {
+    // Serverless instances get a per-instance /tmp, so this cache is a
+    // short-lived optimisation there; a read-only filesystem must not turn a
+    // perfectly good subtitle into an error.
+    fs.writeFileSync(file, vtt, { mode: 0o600 });
+  } catch {
+    return { vtt, cached: false, bytes: buffer.byteLength };
+  }
   // Keep the cache bounded.
   try {
     const files = fs.readdirSync(subCacheDir());
@@ -177,9 +184,27 @@ export async function audioSync(
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ subtitle_url: subtitleUrl, video_url: videoUrl }),
-    signal: AbortSignal.timeout(180_000),
+    // The sidecar has to pull real audio down before it can align anything,
+    // and the source is the bottleneck: the same film answered a four-minute
+    // window in 23 s once and in 181 s the next time. This is an explicit
+    // user action with a spinner, so it gets room instead of a false failure.
+    signal: AbortSignal.timeout(300_000),
   });
-  if (!res.ok) throw new Error(`El servicio de sync respondió ${res.status}`);
+  if (!res.ok) {
+    // Surface what the sidecar said. A bare status turned every cause —
+    // unreachable video, no dialogue found, timeout — into "Error interno".
+    let detail = "";
+    try {
+      const body = (await res.json()) as { error?: string };
+      if (typeof body.error === "string") detail = body.error;
+    } catch {
+      // Non-JSON body: the status is all we have.
+    }
+    throw new UpstreamError(
+      detail || `El servicio de sync respondió ${res.status}`,
+      res.status === 504 ? 504 : 502,
+    );
+  }
   const data = (await res.json()) as { offset_seconds?: number; confidence?: number };
   if (typeof data.offset_seconds !== "number") throw new Error("Respuesta de sync inválida");
   return {

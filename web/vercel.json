@@ -1,0 +1,13 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "nextjs",
+  "regions": ["gru1"],
+  "functions": {
+    "src/app/api/stream/route.ts": { "maxDuration": 60 },
+    "src/app/api/relay/[token]/[[...file]]/route.ts": { "maxDuration": 30 },
+    "src/app/api/subtitles/proxy/route.ts": { "maxDuration": 30 },
+    "src/app/api/vod/streams/route.ts": { "maxDuration": 30 },
+    "src/app/api/live/session/route.ts": { "maxDuration": 30 },
+    "src/app/api/admin/sources/test/route.ts": { "maxDuration": 30 }
+  }
+}

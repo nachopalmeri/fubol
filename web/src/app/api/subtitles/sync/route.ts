@@ -25,6 +25,12 @@ export const POST = route("subtitle_sync", async (request) => {
     if (!subtitlePayload || !streamPayload) {
       return json({ error: "Tokens inválidos" }, { status: 401 });
     }
+    // Both tokens must belong to the VOD side. Without this a link holding
+    // only the `vod` permission could hand in a signed *live* stream token and
+    // have the server run ffmpeg against a channel it may not watch.
+    if (streamPayload.k !== "vod" || (subtitlePayload.k && subtitlePayload.k !== "vod")) {
+      return json({ error: "Este token no corresponde a una película o serie" }, { status: 403 });
+    }
     const result = await audioSync(subtitlePayload.u, streamPayload.u);
     return json(result);
   }

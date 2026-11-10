@@ -83,13 +83,48 @@ describe("statusFor", () => {
     expect(statusFor(kickoff, undefined, kickoff - 60 * 60_000)).toBe("scheduled");
   });
 
-  it("marks old matches finished", () => {
-    expect(statusFor(kickoff, undefined, kickoff + 140 * 60_000)).toBe("finished");
+  it("keeps a league match live through stoppage and the walk off", () => {
+    // The old 130-minute window closed while matches were still being played.
+    expect(statusFor(kickoff, undefined, kickoff + 140 * 60_000)).toBe("live");
+    expect(statusFor(kickoff, undefined, kickoff + 160 * 60_000)).toBe("finished");
+  });
+
+  it("keeps a cup tie live through extra time and penalties", () => {
+    const league = "Copa Libertadores";
+    expect(statusFor(kickoff, undefined, kickoff + 170 * 60_000, league)).toBe("live");
+    expect(statusFor(kickoff, undefined, kickoff + 220 * 60_000, league)).toBe("finished");
+  });
+
+  it("opens the live window before kickoff so the app is usable early", () => {
+    expect(statusFor(kickoff, undefined, kickoff - 10 * 60_000)).toBe("live");
+    expect(statusFor(kickoff, undefined, kickoff - 40 * 60_000)).toBe("scheduled");
   });
 
   it("respects explicit upstream status", () => {
     expect(statusFor(kickoff, "FT", kickoff + 60_000)).toBe("finished");
+    expect(statusFor(kickoff, "Match Finished", kickoff + 60_000)).toBe("finished");
     expect(statusFor(kickoff, "Not Started", kickoff + 60_000)).toBe("scheduled");
+    expect(statusFor(kickoff, "2H", kickoff + 60 * 60_000)).toBe("live");
+  });
+
+  it("reports a postponed match as postponed, never as live", () => {
+    // The clock alone said "live" for a match that was called off.
+    expect(statusFor(kickoff, "Postponed", kickoff + 30 * 60_000)).toBe("postponed");
+    expect(statusFor(kickoff, "Suspended", kickoff + 30 * 60_000)).toBe("postponed");
+    expect(statusFor(kickoff, "Cancelled", kickoff - 60_000)).toBe("postponed");
+  });
+
+  it("stops believing a stale 'not started' long after kickoff", () => {
+    // The free feed never updates once a match begins, so "NS" two hours in
+    // means nobody looked, not that the match has not started.
+    expect(statusFor(kickoff, "NS", kickoff + 5 * 60_000)).toBe("scheduled");
+    expect(statusFor(kickoff, "NS", kickoff + 60 * 60_000)).toBe("live");
+    expect(statusFor(kickoff, "NS", kickoff + 300 * 60_000)).toBe("finished");
+  });
+
+  it("matches status codes as tokens, not as substrings", () => {
+    // `/pen/` used to match "Pending" and report it as finished.
+    expect(statusFor(kickoff, "Pending", kickoff - 60 * 60_000)).toBe("scheduled");
   });
 });
 

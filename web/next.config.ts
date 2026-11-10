@@ -1,7 +1,12 @@
 import type { NextConfig } from "next";
 
+// Vercel builds its own function bundle, so `standalone` there only produced a
+// duplicate artifact (and a `postbuild` step pointing at a directory that never
+// existed). The container build still needs it.
+const standalone = !process.env.VERCEL;
+
 const nextConfig: NextConfig = {
-  output: "standalone",
+  ...(standalone ? { output: "standalone" as const } : {}),
   reactStrictMode: true,
   poweredByHeader: false,
   images: { unoptimized: true },
@@ -11,6 +16,27 @@ const nextConfig: NextConfig = {
     "*": ["./data/**/*"],
   },
   async headers() {
+    // Channel logos and poster art come from whatever host the configured
+    // source points at, so img-src stays open; everything that can execute is
+    // restricted to this origin. `unsafe-inline` for styles is required by
+    // Next's inlined critical CSS and by the inline style attributes the
+    // player uses for progress; `blob:` covers the generated WebVTT tracks and
+    // the hls.js worker.
+    const csp = [
+      "default-src 'self'",
+      "base-uri 'self'",
+      "object-src 'none'",
+      "frame-ancestors 'self'",
+      "form-action 'self'",
+      "script-src 'self' 'unsafe-inline' blob:",
+      "worker-src 'self' blob:",
+      "style-src 'self' 'unsafe-inline'",
+      "img-src 'self' data: blob: https: http:",
+      "media-src 'self' blob: data:",
+      "connect-src 'self' blob: data:",
+      "font-src 'self' data:",
+    ].join("; ");
+
     return [
       {
         source: "/(.*)",
@@ -18,6 +44,7 @@ const nextConfig: NextConfig = {
           { key: "X-Content-Type-Options", value: "nosniff" },
           { key: "Referrer-Policy", value: "no-referrer" },
           { key: "X-Frame-Options", value: "SAMEORIGIN" },
+          { key: "Content-Security-Policy", value: csp },
           {
             key: "Permissions-Policy",
             value: "camera=(), microphone=(), geolocation=(), payment=()",

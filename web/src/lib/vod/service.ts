@@ -1,9 +1,12 @@
+import { cacheGet, cacheSet } from "../cache";
 import { mapLimit, withTimeout } from "../http";
 import {
+  configureUrlFor,
   getCatalog,
   getManifest,
   getMeta,
   getStreams,
+  needsConfiguration,
   supports,
   type AddonMeta,
   type AddonMetaPreview,
@@ -34,12 +37,55 @@ async function manifestsFor(addons: AddonRow[], timeoutMs = 4_000) {
 }
 
 /** Catalogs only need providers that can publish movies or series, not subtitle addons. */
-function catalogAddons(): AddonRow[] {
-  return listAddonRows().filter((addon) => addon.kind === "vod" || addon.kind === "meta");
+async function catalogAddons(): Promise<AddonRow[]> {
+  return (await listAddonRows()).filter((addon) => addon.kind === "vod" || addon.kind === "meta");
 }
 
+/**
+ * Serving the home page used to cost up to 10.7 s on a cold cache: every load
+ * re-validated availability for 48 titles, and each validation queried every
+ * VOD addon. The result is now cached with a short fresh window and a long
+ * stale one — a stale payload is served immediately while a single background
+ * refresh runs, so only the very first visitor after a restart ever waits.
+ */
+const HOME_FRESH_MS = 5 * 60_000;
+const HOME_STALE_MS = 6 * 3600_000;
+let homeRefresh: Promise<HomeRow[]> | null = null;
+
 export async function getHomeRows(maxRows = 10): Promise<HomeRow[]> {
-  const addons = catalogAddons();
+  const revision = await providerRevision();
+  const key = `vod:home:v1:${revision}:${maxRows}`;
+  const staleKey = `vod:home:stale:v1:${revision}:${maxRows}`;
+  const fresh = cacheGet<HomeRow[]>(key);
+  if (fresh) return fresh;
+
+  const stale = cacheGet<HomeRow[]>(staleKey);
+  if (stale) {
+    // Refresh behind the response, and only once no matter how many visitors
+    // arrive at the same moment.
+    if (!homeRefresh) {
+      homeRefresh = computeHomeRows(maxRows)
+        .then((rows) => {
+          cacheSet(key, rows, HOME_FRESH_MS);
+          cacheSet(staleKey, rows, HOME_STALE_MS);
+          return rows;
+        })
+        .catch(() => stale)
+        .finally(() => {
+          homeRefresh = null;
+        });
+    }
+    return stale;
+  }
+
+  const rows = await computeHomeRows(maxRows);
+  cacheSet(key, rows, HOME_FRESH_MS);
+  cacheSet(staleKey, rows, HOME_STALE_MS);
+  return rows;
+}
+
+async function computeHomeRows(maxRows: number): Promise<HomeRow[]> {
+  const addons = await catalogAddons();
   const withManifests = await manifestsFor(addons);
   const tasks: { addon: AddonRow; catalog: AddonCatalog }[] = [];
   for (const { addon, manifest } of withManifests) {
@@ -79,7 +125,7 @@ export async function getHomeRows(maxRows = 10): Promise<HomeRow[]> {
   }
   const available = await filterAvailable(
     [...new Map(out.flatMap((row) => row.metas).map((meta) => [`${meta.type}:${meta.id}`, meta])).values()].slice(0, 48),
-    providerRevision(),
+    await providerRevision(),
     { streams: getPlayableVodStreams, meta: getVodMeta },
     6_000,
   );
@@ -103,7 +149,7 @@ export async function searchVod(query: string, timeoutMs = 10_000): Promise<Sear
   const trimmed = query.trim();
   if (trimmed.length < 2) return [];
   const deadline = Date.now() + timeoutMs;
-  const addons = catalogAddons();
+  const addons = await catalogAddons();
   const withManifests = await manifestsFor(addons);
   const tasks: { addon: AddonRow; type: string; catalogId: string }[] = [];
 
@@ -160,7 +206,7 @@ export async function searchVod(query: string, timeoutMs = 10_000): Promise<Sear
     .slice(0, 144);
   const available = await filterAvailable(
     ordered.map((result) => result.meta),
-    providerRevision(),
+    await providerRevision(),
     { streams: getPlayableVodStreams, meta: getVodMeta },
     Math.max(1_000, deadline - Date.now() - 250),
   );
@@ -171,14 +217,15 @@ export async function searchVod(query: string, timeoutMs = 10_000): Promise<Sear
   }).slice(0, 48);
 }
 
-function providerRevision(): string {
-  return shortHash(JSON.stringify([openFilmsEnabled(), ...listAddonRows("vod").map((addon) => [addon.id, addon.url])]), 16);
+async function providerRevision(): Promise<string> {
+  const addons = await listAddonRows("vod");
+  return shortHash(JSON.stringify([openFilmsEnabled(), ...addons.map((addon) => [addon.id, addon.url])]), 16);
 }
 
 export async function getVodMeta(type: string, id: string): Promise<AddonMeta | null> {
   const openFilm = type === "movie" ? await getOpenFilm(id) : null;
   if (openFilm) return openFilm.meta;
-  const addons = catalogAddons();
+  const addons = await catalogAddons();
   const withManifests = await manifestsFor(addons);
   const ordered = withManifests
     .filter(({ manifest }) => supports(manifest, "meta"))
@@ -197,24 +244,46 @@ export async function getVodMeta(type: string, id: string): Promise<AddonMeta | 
 export interface VodStreamsResult {
   sources: VodSource[];
   addonsTried: number;
+  /**
+   * Streams the providers returned that a browser cannot play: BitTorrent
+   * `infoHash` entries with no HTTP URL. Measured against the real providers,
+   * Torrentio answers a movie with 100 of these and the user's own AIOStreams
+   * with 522, all of them P2P and none of them a URL. Counting them is the
+   * difference between "no hay fuentes" and "hay 522 fuentes y ninguna se
+   * puede abrir sin un resolver debrid".
+   */
+  p2pOnly: number;
+  /** Addons that declare themselves unconfigured and were skipped. */
+  unconfigured: { name: string; configureUrl: string | null }[];
 }
 
 export async function getVodStreams(type: string, id: string): Promise<VodStreamsResult> {
   const openFilm = type === "movie" ? await getOpenFilm(id) : null;
-  const addons = listAddonRows("vod");
+  const addons = await listAddonRows("vod");
+  const unconfigured: { name: string; configureUrl: string | null }[] = [];
   const results = await mapLimit(addons, 5, async (addon) => {
     try {
       const manifest = await getManifest(addon.url);
-      if (!supports(manifest, "stream")) return [];
+      if (!supports(manifest, "stream")) return { sources: [] as VodSource[], p2p: 0 };
+      if (needsConfiguration(manifest)) {
+        unconfigured.push({ name: addon.name, configureUrl: configureUrlFor(addon.url) });
+        return { sources: [] as VodSource[], p2p: 0 };
+      }
       const streams = await withTimeout(getStreams(addon, type, id), 20000, "streams lentos");
-      return normalizeStreams(addon, streams);
+      const p2p = streams.filter((stream) => !stream.url && stream.infoHash).length;
+      return { sources: normalizeStreams(addon, streams), p2p };
     } catch {
-      return [] as VodSource[];
+      return { sources: [] as VodSource[], p2p: 0 };
     }
   });
   return {
-    sources: dedupeSources([...(openFilm?.sources ?? []), ...results.flat()]).slice(0, 40),
+    sources: dedupeSources([
+      ...(openFilm?.sources ?? []),
+      ...results.flatMap((result) => result.sources),
+    ]).slice(0, 40),
     addonsTried: addons.length + (openFilm ? 1 : 0),
+    p2pOnly: results.reduce((total, result) => total + result.p2p, 0),
+    unconfigured,
   };
 }
 
@@ -225,7 +294,21 @@ export interface SubtitleProvider {
 
 export async function getPlayableVodStreams(type: string, id: string): Promise<VodStreamsResult & { kinds: Record<string, "hls" | "mp4"> }> {
   const result = await getVodStreams(type, id);
-  const inspected = await mapLimit(result.sources.slice(0, 6), 3, async (source) => ({ source, kind: await validateVodSource(source) }));
+
+  // Swarm-backed sources are not probed. Measured against a cold swarm, the
+  // first bytes took 63.7 s to arrive (6.6 s once the server had the pieces
+  // cached), so a synchronous container check would either time out and
+  // discard every torrent or hold the page for a minute. The release-name
+  // filter in `torrent.ts` already removes the containers a browser cannot
+  // decode, and the player fails over if a source turns out to be dead.
+  const torrents = result.sources.filter((source) => source.viaTorrent);
+  const direct = result.sources.filter((source) => !source.viaTorrent);
+
+  const inspected = await mapLimit(direct.slice(0, 6), 3, async (source) => ({
+    source,
+    kind: await validateVodSource(source),
+  }));
+
   const kinds: Record<string, "hls" | "mp4"> = {};
   const sources: VodSource[] = [];
   for (const item of inspected) {
@@ -233,13 +316,91 @@ export async function getPlayableVodStreams(type: string, id: string): Promise<V
     sources.push(item.source);
     kinds[item.source.id] = item.kind;
   }
-  return { ...result, sources, kinds };
+  for (const source of torrents.slice(0, 8)) {
+    sources.push(source);
+    kinds[source.id] = "mp4";
+  }
+
+  // Ask the streaming server for the first bytes of the best candidate now, so
+  // the swarm is warm by the time somebody presses play instead of after it.
+  if (torrents[0]) warmTorrent(torrents[0].url);
+
+  return { ...result, sources: sources.sort((a, b) => b.score - a.score), kinds };
+}
+
+/** In-flight and recently warmed torrent URLs, so one request is enough. */
+const warming = new Set<string>();
+
+function warmTorrent(url: string): void {
+  if (warming.has(url)) return;
+  warming.add(url);
+  if (warming.size > 200) warming.clear();
+  void fetch(url, {
+    headers: { range: "bytes=0-65535" },
+    signal: AbortSignal.timeout(120_000),
+  })
+    .then((response) => response.body?.cancel())
+    .catch(() => undefined);
 }
 
 export async function subtitleProviders(): Promise<SubtitleProvider[]> {
-  const addons = listAddonRows(undefined, false);
+  const addons = await listAddonRows(undefined, false);
   const withManifests = await manifestsFor(addons);
   return withManifests
     .filter(({ manifest }) => supports(manifest, "subtitles"))
+    // An addon whose manifest says it is not configured answers every
+    // `subtitles/...` request with 404. Querying it only spends a timeout.
+    .filter(({ manifest }) => !needsConfiguration(manifest))
     .map(({ addon, manifest }) => ({ addon, manifestName: manifest.name }));
+}
+
+export interface AddonDiagnostic {
+  id: string;
+  name: string;
+  kind: AddonRow["kind"];
+  url: string;
+  manifestOk: boolean;
+  /** The addon's own manifest declares it unusable until configured. */
+  needsConfiguration: boolean;
+  configureUrl: string | null;
+  resources: string[];
+  error?: string;
+}
+
+/**
+ * Per-addon state for the admin panel. Deliberately reports whether the addon
+ * can serve resources, not merely whether its manifest answers: five of the six
+ * subtitle providers return a 200 manifest and then 404 on every actual
+ * request, which earlier audits recorded as "PASS, limited".
+ */
+export async function addonDiagnostics(): Promise<AddonDiagnostic[]> {
+  const addons = await listAddonRows(undefined, true);
+  return mapLimit(addons, 5, async (addon) => {
+    const base = {
+      id: addon.id,
+      name: addon.name,
+      kind: addon.kind,
+      url: addon.url,
+      configureUrl: configureUrlFor(addon.url),
+    };
+    try {
+      const manifest = await withTimeout(getManifest(addon.url), 10_000, "manifest lento");
+      return {
+        ...base,
+        manifestOk: true,
+        needsConfiguration: needsConfiguration(manifest),
+        resources: (manifest.resources ?? []).map((resource) =>
+          typeof resource === "string" ? resource : resource.name,
+        ),
+      };
+    } catch (error) {
+      return {
+        ...base,
+        manifestOk: false,
+        needsConfiguration: false,
+        resources: [],
+        error: error instanceof Error ? error.message : "error",
+      };
+    }
+  });
 }

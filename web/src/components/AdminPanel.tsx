@@ -59,6 +59,12 @@ interface HealthData {
   totalChannels: number;
   addons: number;
   links: number;
+  network?: {
+    ips: string[];
+    distinct: number;
+    stable: boolean;
+    note: string;
+  };
 }
 
 interface ProbeResult {
@@ -68,6 +74,18 @@ interface ProbeResult {
   edgeAgeS: number | null;
   live: boolean;
   status?: number;
+  error?: string;
+}
+
+interface AddonDiagnostic {
+  id: string;
+  name: string;
+  kind: AddonRow["kind"];
+  url: string;
+  manifestOk: boolean;
+  needsConfiguration: boolean;
+  configureUrl: string | null;
+  resources: string[];
   error?: string;
 }
 
@@ -146,6 +164,10 @@ export default function AdminPanel({ initialTab = "links" }: { initialTab?: Admi
   const [links, setLinks] = useState<AdminLink[] | null>(null);
   const [sources, setSources] = useState<AdminSource[] | null>(null);
   const [addons, setAddons] = useState<AddonRow[] | null>(null);
+  const [diagnostics, setDiagnostics] = useState<AddonDiagnostic[] | null>(null);
+  const [editingAddonId, setEditingAddonId] = useState<string | null>(null);
+  const [addonEditUrl, setAddonEditUrl] = useState("");
+  const [addonEditName, setAddonEditName] = useState("");
   const [health, setHealth] = useState<HealthData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -165,6 +187,8 @@ export default function AdminPanel({ initialTab = "links" }: { initialTab?: Admi
       } else if (which === "addons") {
         const data = await request<{ addons: AddonRow[] }>("/api/admin/addons");
         setAddons(data.addons);
+        const diag = await request<{ addons: AddonDiagnostic[] }>("/api/admin/addons/diagnostics");
+        setDiagnostics(diag.addons);
       } else {
         const data = await request<HealthData>("/api/admin/health");
         setHealth(data);
@@ -325,6 +349,7 @@ export default function AdminPanel({ initialTab = "links" }: { initialTab?: Admi
           method: "PATCH",
           body: JSON.stringify({
             name: payload.name,
+            url: payload.url,
             priority: payload.priority,
             enabled: payload.enabled,
             config,
@@ -431,6 +456,32 @@ export default function AdminPanel({ initialTab = "links" }: { initialTab?: Admi
       await refresh("addons");
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "No se pudo actualizar");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const startEditAddon = (addon: AddonRow) => {
+    setEditingAddonId(addon.id);
+    setAddonEditUrl(addon.url);
+    setAddonEditName(addon.name);
+  };
+
+  const saveAddonEdit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!editingAddonId) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await request(`/api/admin/addons/${editingAddonId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ url: addonEditUrl.trim(), name: addonEditName.trim() || undefined }),
+      });
+      flash("Manifest actualizado");
+      setEditingAddonId(null);
+      await refresh("addons");
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "No se pudo guardar el manifest");
     } finally {
       setBusy(false);
     }
@@ -869,6 +920,39 @@ export default function AdminPanel({ initialTab = "links" }: { initialTab?: Admi
                 </div>
               </div>
             )}
+            <div className="panel-body" style={{ paddingBottom: 0 }}>
+              <div className="empty-inline">
+                <span className="empty-icon">
+                  <IconSettings size={18} />
+                </span>
+                <div>
+                  <h3>Cómo queda cada addon operativo</h3>
+                  <p>
+                    El manifest público de un proveedor responde 200 pero devuelve 404 en cada uso
+                    hasta que iniciás sesión en su web. Con tu sesión, el proveedor te da un
+                    manifest propio: copiá esa URL en <strong>Manifest</strong> (fila del addon) y
+                    guardala. La app valida el manifest antes de aceptarlo.
+                  </p>
+                  <ul className="muted" style={{ margin: "8px 0 0", paddingLeft: 18 }}>
+                    <li>
+                      <strong>Subtítulos</strong> (SubSource, SubDL, Community Subtitles, SubSense,
+                      OpenSubtitles PRO): entrá al proveedor, iniciá sesión y copiá el manifest con
+                      tus credenciales. OpenSubtitles v3 ya funciona sin cuenta.
+                    </li>
+                    <li>
+                      <strong>Sports Streams</strong> (pestaña Fuentes en vivo): el manifest con la
+                      verificación del proveedor; pegalo en la fuente, en <strong>Editar</strong> →
+                      Manifest URL.
+                    </li>
+                    <li>
+                      <strong>Streams VOD</strong> (Torrentio, AIOStreams): el manifest tiene que
+                      llevar tu token de un servicio de descarga (debrid). Sin ese token el addon
+                      devuelve <code>infoHash</code> y el navegador no puede abrirlo.
+                    </li>
+                  </ul>
+                </div>
+              </div>
+            </div>
             <div className="data-list">
               {addons === null ? (
                 <div className="panel-body">
@@ -879,28 +963,95 @@ export default function AdminPanel({ initialTab = "links" }: { initialTab?: Admi
                   <p className="muted">No hay addons. Agregá uno con manifest.json.</p>
                 </div>
               ) : (
-                addons.map((addon) => (
-                  <div className="data-row" key={addon.id}>
-                    <div className="data-main">
-                      <strong>
-                        {addon.name}{" "}
-                        <span className={`tag ${addon.enabled ? "tag-on" : "tag-off"}`}>
-                          {addon.enabled ? "activo" : "pausado"}
-                        </span>{" "}
-                        <span className="tag">{addon.kind}</span>
-                      </strong>
-                      <span>{addon.url}</span>
+                addons.map((addon) => {
+                  const diag = diagnostics?.find((item) => item.id === addon.id);
+                  const editing = editingAddonId === addon.id;
+                  return (
+                    <div className="data-row" key={addon.id}>
+                      <div className="data-main">
+                        <strong>
+                          {addon.name}{" "}
+                          <span className={`tag ${addon.enabled ? "tag-on" : "tag-off"}`}>
+                            {addon.enabled ? "activo" : "pausado"}
+                          </span>{" "}
+                          <span className="tag">{addon.kind}</span>{" "}
+                          {diag && !diag.manifestOk && (
+                            <span className="tag tag-off">manifest caído</span>
+                          )}
+                          {diag?.needsConfiguration && (
+                            <span className="tag tag-off">pide configuración</span>
+                          )}
+                          {diag?.manifestOk && !diag.needsConfiguration && (
+                            <span className="tag tag-on">ok</span>
+                          )}
+                        </strong>
+                        <span>{addon.url}</span>
+                        {diag?.error && <span className="muted">{diag.error}</span>}
+                      </div>
+                      <div className="data-actions">
+                        {diag?.configureUrl && (
+                          <a
+                            className="btn btn-ghost btn-xs"
+                            href={diag.configureUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            Configurar ↗
+                          </a>
+                        )}
+                        <button
+                          className="btn btn-ghost btn-xs"
+                          onClick={() => (editing ? setEditingAddonId(null) : startEditAddon(addon))}
+                          disabled={busy}
+                        >
+                          Manifest
+                        </button>
+                        <button className="btn btn-ghost btn-xs" onClick={() => void toggleAddon(addon)} disabled={busy}>
+                          {addon.enabled ? "Pausar" : "Activar"}
+                        </button>
+                        <button className="btn btn-ghost btn-xs" onClick={() => void removeAddon(addon)} disabled={busy}>
+                          <IconTrash size={13} />
+                        </button>
+                      </div>
+                      {editing && (
+                        <form className="panel-body" onSubmit={saveAddonEdit} style={{ gridColumn: "1 / -1" }}>
+                          <div className="field">
+                            <label htmlFor={`addon-url-${addon.id}`}>Manifest URL (el personal, con tu cuenta)</label>
+                            <input
+                              id={`addon-url-${addon.id}`}
+                              className="input"
+                              value={addonEditUrl}
+                              onChange={(event) => setAddonEditUrl(event.target.value)}
+                              spellCheck={false}
+                            />
+                            <small>
+                              El manifest público responde 200 pero devuelve 404 en cada uso hasta que
+                              iniciás sesión en el proveedor. Pegá acá la URL que te da el
+                              proveedor y el addon queda operativo.
+                            </small>
+                          </div>
+                          <div className="field">
+                            <label htmlFor={`addon-name-${addon.id}`}>Nombre</label>
+                            <input
+                              id={`addon-name-${addon.id}`}
+                              className="input"
+                              value={addonEditName}
+                              onChange={(event) => setAddonEditName(event.target.value)}
+                            />
+                          </div>
+                          <div className="field-row">
+                            <button className="btn btn-primary" type="submit" disabled={busy}>
+                              Guardar manifest
+                            </button>
+                            <button className="btn btn-ghost" type="button" onClick={() => setEditingAddonId(null)}>
+                              Cancelar
+                            </button>
+                          </div>
+                        </form>
+                      )}
                     </div>
-                    <div className="data-actions">
-                      <button className="btn btn-ghost btn-xs" onClick={() => void toggleAddon(addon)} disabled={busy}>
-                        {addon.enabled ? "Pausar" : "Activar"}
-                      </button>
-                      <button className="btn btn-ghost btn-xs" onClick={() => void removeAddon(addon)} disabled={busy}>
-                        <IconTrash size={13} />
-                      </button>
-                    </div>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
           </section>
@@ -978,6 +1129,26 @@ export default function AdminPanel({ initialTab = "links" }: { initialTab?: Admi
               <span>links activos</span>
             </div>
           </div>
+
+          {health?.network && (
+            <section className="panel" style={{ marginBottom: 18 }}>
+              <div className="panel-head">
+                <div>
+                  <h2>Salida de red</h2>
+                  <p>Algunos proveedores atan el stream a la IP que pidió el token.</p>
+                </div>
+                <span className={`tag ${health.network.stable ? "tag-on" : "tag-off"}`}>
+                  {health.network.stable ? "IP fija" : `${health.network.distinct} IPs`}
+                </span>
+              </div>
+              <div className="panel-body">
+                <p className="muted">{health.network.note}</p>
+                {health.network.ips.length > 0 && (
+                  <p className="muted" style={{ wordBreak: "break-all" }}>{health.network.ips.join(" · ")}</p>
+                )}
+              </div>
+            </section>
+          )}
 
           <section className="panel">
             <div className="panel-head">

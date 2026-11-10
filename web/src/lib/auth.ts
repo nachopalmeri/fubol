@@ -2,7 +2,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import type { NextResponse } from "next/server";
 import { safeEqualStr, signToken, verifyToken, verifyPin } from "./crypto";
-import { getAdminPassword } from "./env";
+import { env, getAdminPassword } from "./env";
 import { getShareLink, linkIsActive, touchShareLink, type Permission } from "./links";
 
 export const SESSION_COOKIE = "fubol_session";
@@ -30,7 +30,7 @@ export async function getSession(): Promise<Session | null> {
 
   if (payload.r === "a") return { role: "admin" };
   if (payload.r === "l") {
-    const link = getShareLink(payload.c);
+    const link = await getShareLink(payload.c);
     if (!link || !linkIsActive(link)) return null;
     return {
       role: "link",
@@ -81,7 +81,7 @@ export function attachLinkSession(response: NextResponse, code: string, request:
     path: "/",
     maxAge: Math.floor(LINK_TTL / 1000),
   });
-  touchShareLink(code);
+  void touchShareLink(code);
 }
 
 export function clearSession(response: NextResponse): void {
@@ -92,8 +92,12 @@ export function baseUrl(request: Request): string {
   const configured = process.env.FUBOL_BASE_URL?.trim().replace(/\/+$/, "");
   if (configured) return configured;
   const url = new URL(request.url);
-  const forwardedHost = request.headers.get("x-forwarded-host");
-  const forwardedProto = request.headers.get("x-forwarded-proto");
+  // `x-forwarded-host` is attacker-controlled unless a reverse proxy we own is
+  // the only way in: believing it turned every redirect built from this value
+  // into an open redirect. Set FUBOL_BASE_URL (or FUBOL_TRUST_PROXY) behind a
+  // proxy; otherwise only the Host header is used.
+  const forwardedHost = env.trustProxyHeaders ? request.headers.get("x-forwarded-host") : null;
+  const forwardedProto = env.trustProxyHeaders ? request.headers.get("x-forwarded-proto") : null;
   // Inside the container request.url is built from HOSTNAME (0.0.0.0), which the
   // browser on the LAN cannot use. The Host header still carries the address the
   // client actually typed, so prefer it over the bind address.
@@ -102,11 +106,11 @@ export function baseUrl(request: Request): string {
   return `${proto}://${host}`;
 }
 
-export function validateLinkAccess(
+export async function validateLinkAccess(
   code: string,
   pin: string | null,
-): { ok: true } | { ok: false; reason: "invalid" | "pin"; status: number } {
-  const link = getShareLink(code);
+): Promise<{ ok: true } | { ok: false; reason: "invalid" | "pin"; status: number }> {
+  const link = await getShareLink(code);
   if (!link || !linkIsActive(link)) return { ok: false, reason: "invalid", status: 404 };
   if (link.pinHash && !verifyPin(pin ?? "", link.pinHash)) {
     return { ok: false, reason: "pin", status: 401 };

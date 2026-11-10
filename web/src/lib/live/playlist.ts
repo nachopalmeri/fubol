@@ -14,6 +14,24 @@ export interface HlsSegment {
   byteRange?: string;
 }
 
+/**
+ * How much the edge-age reading can be trusted.
+ *
+ * - `measured`: a PROGRAM-DATE-TIME sits on (or next to) the newest segment.
+ * - `extrapolated`: the only PDT is far back in the playlist, so the edge was
+ *   derived by adding every segment duration after it. Providers that stamp a
+ *   single PDT at the top of the window land here.
+ * - `implausible`: the arithmetic says the newest frame was produced now or in
+ *   the future. No re-stream can do that, so the origin re-stamps PDT at
+ *   republish time (or its clock is wrong) and the number means nothing.
+ * - `none`: no PDT at all. Most IPTV re-streams and every ffmpeg relay output
+ *   without `program_date_time` land here.
+ */
+export type EdgeTrust = "measured" | "extrapolated" | "implausible" | "none";
+
+/** Below this the "newest frame" would be live or from the future: impossible. */
+const IMPLAUSIBLE_EDGE_S = 0.5;
+
 export interface HlsPlaylist {
   isMaster: boolean;
   variants: HlsVariant[];
@@ -25,7 +43,15 @@ export interface HlsPlaylist {
   lowLatency: boolean;
   partTarget: number | null;
   holdBack: number | null;
+  /** Seconds behind the wall clock, or null when the reading is not usable. */
   edgeAgeS: number | null;
+  edgeTrust: EdgeTrust;
+  /** Unclamped reading, kept even when rejected, so diagnostics can show it. */
+  edgeRawS: number | null;
+  /** Segments carrying a PDT tag. */
+  pdtCount: number;
+  /** Media seconds added to the nearest PDT to reach the edge. */
+  pdtExtrapolatedS: number;
   height: number | null;
   bitrate: number | null;
 }
@@ -163,9 +189,15 @@ export function parseHlsPlaylist(text: string, baseUrl: string, now = Date.now()
   }
 
   const isMaster = variants.length > 0 && segments.length === 0;
+  const pdtCount = segments.reduce((total, segment) => total + (segment.pdt !== undefined ? 1 : 0), 0);
   let edgeAgeS: number | null = null;
+  let edgeRawS: number | null = null;
+  let edgeTrust: EdgeTrust = "none";
+  let pdtExtrapolatedS = 0;
 
-  if (segments.length > 0) {
+  if (segments.length > 0 && pdtCount > 0) {
+    // Walk back from the newest segment until a PDT appears, then add every
+    // duration between that tag and the end of the window.
     let lastEdge: number | null = null;
     let trailing = 0;
     for (let i = segments.length - 1; i >= 0; i--) {
@@ -174,11 +206,21 @@ export function parseHlsPlaylist(text: string, baseUrl: string, now = Date.now()
       trailing += segment.duration;
       if (segment.pdt !== undefined) {
         lastEdge = (segment.pdt + trailing * 1000) / 1000;
+        pdtExtrapolatedS = trailing - segment.duration;
         break;
       }
     }
     if (lastEdge !== null) {
-      edgeAgeS = Math.max(0, now / 1000 - lastEdge);
+      edgeRawS = now / 1000 - lastEdge;
+      if (edgeRawS < IMPLAUSIBLE_EDGE_S) {
+        // The origin claims its newest frame is current. It re-stamps PDT when
+        // it republishes, so the value describes its own clock, not the event.
+        edgeTrust = "implausible";
+      } else {
+        const target = targetDuration ?? 6;
+        edgeTrust = pdtExtrapolatedS > 2 * target ? "extrapolated" : "measured";
+        edgeAgeS = edgeRawS;
+      }
     }
   }
 
@@ -197,6 +239,10 @@ export function parseHlsPlaylist(text: string, baseUrl: string, now = Date.now()
     partTarget,
     holdBack,
     edgeAgeS,
+    edgeTrust,
+    edgeRawS,
+    pdtCount,
+    pdtExtrapolatedS,
     height: bestVariant?.height ?? null,
     bitrate,
   };

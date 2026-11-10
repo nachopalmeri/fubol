@@ -1,5 +1,5 @@
 import type { AddonMeta, AddonMetaPreview } from "../addons";
-import { cacheGet, cacheSet } from "../db";
+import { cacheGet, cacheSet } from "../cache";
 import { shortHash } from "../crypto";
 import { detectGate, fetchUpstream, mapLimit, withTimeout } from "../http";
 import { parseHlsPlaylist, selectVariant } from "../live/playlist";
@@ -43,9 +43,13 @@ export async function validateVodSource(source: VodSource): Promise<"hls" | "mp4
   const key = `vod:media:v1:${shortHash(JSON.stringify([source.url, headers]), 32)}`;
   const cached = cacheGet<{ kind: "hls" | "mp4" | null }>(key);
   if (cached) return cached.kind;
+  // A swarm-backed source has to find peers and fetch the first pieces before
+  // it can answer at all: measured at 6.6 s against a well-seeded torrent, so
+  // the five-second budget used for an ordinary CDN rejected every one of them.
+  const timeoutMs = source.viaTorrent ? 25_000 : 5_000;
   let kind: "hls" | "mp4" | null = null;
   try {
-    const { res, finalUrl } = await fetchUpstream(source.url, { headers, range: "bytes=0-4095", timeoutMs: 5000 });
+    const { res, finalUrl } = await fetchUpstream(source.url, { headers, range: "bytes=0-4095", timeoutMs });
     if (!res.ok) {
       await res.body?.cancel();
     } else {
@@ -53,7 +57,7 @@ export async function validateVodSource(source: VodSource): Promise<"hls" | "mp4
       if (/mpegurl/i.test(contentType) || /\.m3u8(?:\?|$)/i.test(finalUrl)) {
         // A range may truncate a playlist. Fetch it with a bounded body instead.
         await res.body?.cancel();
-        const full = await fetchUpstream(source.url, { headers, timeoutMs: 5000 });
+        const full = await fetchUpstream(source.url, { headers, timeoutMs });
         const text = new TextDecoder().decode(await readPrefix(full.res, 1_000_000));
         if (full.res.ok && text.trimStart().startsWith("#EXTM3U") && !detectGate(text)) {
           const playlist = parseHlsPlaylist(text, full.finalUrl);

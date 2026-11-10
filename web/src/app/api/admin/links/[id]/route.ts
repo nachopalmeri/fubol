@@ -11,7 +11,7 @@ export const DELETE = route<{ params: Promise<{ id: string }> }>(
     const { id } = await context.params;
     const numeric = Number(id);
     if (!Number.isFinite(numeric)) return json({ error: "Id inválido" }, { status: 400 });
-    const revoked = revokeShareLink(numeric);
+    const revoked = await revokeShareLink(numeric);
     return json({ revoked });
   },
 );

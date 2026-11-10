@@ -237,7 +237,7 @@ export type GateKind = "login" | "captcha" | "html" | "drm" | "unknown";
 
 /** Detects interstitials that mean "this source is not a playable stream". */
 export function detectGate(text: string): GateKind | null {
-  if (text.includes("#EXTM3U")) return null;
+  if (looksLikePlaylist(text) || text.includes("#EXTM3U")) return null;
   const head = text.slice(0, 4000).toLowerCase();
   if (head.includes("captcha") || head.includes("cf-chl") || head.includes("just a moment")) {
     return "captcha";
@@ -253,7 +253,10 @@ export function detectGate(text: string): GateKind | null {
 }
 
 export function looksLikePlaylist(text: string): boolean {
-  return text.trimStart().startsWith("#EXTM3U");
+  // IPTV providers routinely serve playlists with a UTF-8 byte order mark,
+  // which `trimStart` does not remove: those sources were being rejected as
+  // "not a valid HLS" while being perfectly playable.
+  return text.replace(/^﻿/, "").trimStart().startsWith("#EXTM3U");
 }
 
 export async function withTimeout<T>(promise: Promise<T>, ms: number, label = "timeout"): Promise<T> {

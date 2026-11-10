@@ -63,7 +63,7 @@ describe("VOD addon integration", () => {
   it("validates a local manifest and returns playable direct streams", async () => {
     const addon = await addAddon({ url: manifestUrl, kind: "vod" });
     expect(addon.name).toBe("Fubol test fixture");
-    expect(listAddonRows("vod").some((row) => row.id === addon.id && row.enabled)).toBe(true);
+    expect((await listAddonRows("vod")).some((row) => row.id === addon.id && row.enabled)).toBe(true);
 
     const result = await getVodStreams("movie", "tt-fixture");
     expect(result.addonsTried).toBeGreaterThanOrEqual(1);

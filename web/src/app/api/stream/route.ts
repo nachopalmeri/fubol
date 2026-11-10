@@ -5,6 +5,9 @@ import { noteFailure, noteSuccess } from "@/lib/live/rank";
 import { logger } from "@/lib/logger";
 import { sanitizeUrl } from "@/lib/crypto";
 import { getSession } from "@/lib/auth";
+import { torrentServerBase } from "@/lib/vod/torrent";
+import { getStreams } from "@/lib/addons";
+import { getLiveSource } from "@/lib/live/sources";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -17,6 +20,47 @@ const PASS_HEADERS = [
   "etag",
   "last-modified",
 ];
+
+/**
+ * Stable part of a stream URL, used to pick the same variant after the addon
+ * is asked again: `/m3u/now-sky-sports-premiere/live.m3u8` keeps the channel
+ * slug whatever token the provider mints.
+ */
+function streamKey(url: string): string {
+  try {
+    const parts = new URL(url).pathname.split("/").filter(Boolean);
+    const last = parts[parts.length - 1] ?? "";
+    const slug = parts.length > 1 ? (parts[parts.length - 2] ?? last) : last;
+    return slug.replace(/\.[a-z0-9]+$/i, "").toLowerCase();
+  } catch {
+    return url.toLowerCase();
+  }
+}
+
+/**
+ * Asks the addon for the stream again.
+ *
+ * The provider mints the stream URL with a token that names the IP that asked
+ * for it, and rejects the same URL from any other address ("Stream already
+ * active on another device"). On a platform where each request leaves from a
+ * different address, the URL resolved when the session was built is dead by
+ * the time the player asks for it, so the addon is queried here — from the
+ * same request that will fetch the playlist.
+ */
+async function resolveAddonTarget(
+  ref: { i: string; t: string; s: string },
+  original: string,
+): Promise<string | null> {
+  const source = await getLiveSource(ref.s);
+  if (!source) return null;
+  const addonRef = { id: source.id, name: source.name, url: source.url, kind: "live" as const };
+  const streams = await getStreams(addonRef, ref.t, ref.i, { fresh: true });
+  const usable = streams.filter((stream): stream is typeof stream & { url: string } => Boolean(stream.url));
+  if (usable.length === 0) return null;
+  const key = streamKey(original);
+  const match = usable.find((stream) => streamKey(stream.url) === key);
+  return (match ?? usable[0]!).url;
+}
 
 export async function GET(request: Request): Promise<Response> {
   const token = new URL(request.url).searchParams.get("t");
@@ -35,11 +79,34 @@ export async function GET(request: Request): Promise<Response> {
   const remainingTtl = Math.max(60_000, Number(payload.exp) - Date.now());
   const range = request.headers.get("range") ?? undefined;
 
+  // The upstream URL may have been minted by another instance, from another
+  // address, and the provider only honours it for the address that asked for
+  // it. Re-resolving here keeps both requests on the same one.
+  let target = payload.u;
+  if (payload.a) {
+    try {
+      const fresh = await resolveAddonTarget(payload.a, payload.u);
+      if (fresh) target = fresh;
+    } catch (error) {
+      logger.warn("stream_addon_resolve_failed", {
+        sourceId: payload.s,
+        error: error instanceof Error ? error.message : "error",
+      });
+    }
+  }
+
+  // A swarm-backed file has to find peers before the first byte arrives:
+  // measured at 63.7 s against a cold torrent and 6.6 s once the streaming
+  // server had the pieces. The ordinary 15 s budget turned every first play
+  // into a 504, so the local torrent server gets a longer one.
+  const base = torrentServerBase();
+  const viaTorrent = base !== undefined && target.startsWith(`${base}/`);
+
   try {
-    const { res, finalUrl } = await fetchUpstream(payload.u, {
+    const { res, finalUrl } = await fetchUpstream(target, {
       headers,
       range,
-      timeoutMs: 15_000,
+      timeoutMs: viaTorrent ? 90_000 : 15_000,
       signal: request.signal,
     });
 
@@ -61,7 +128,7 @@ export async function GET(request: Request): Promise<Response> {
           remainingTtl,
         ),
       );
-      noteSuccess(payload.u);
+      noteSuccess(target);
       return new Response(rewritten, {
         status: 200,
         headers: {
@@ -72,11 +139,11 @@ export async function GET(request: Request): Promise<Response> {
     }
 
     if (!res.ok) {
-      noteFailure(payload.u);
+      noteFailure(target);
       return new Response(`Origen ${res.status}`, { status: res.status >= 500 ? 502 : res.status });
     }
 
-    noteSuccess(payload.u);
+    noteSuccess(target);
     const outHeaders = new Headers();
     for (const name of PASS_HEADERS) {
       const value = res.headers.get(name);
@@ -85,7 +152,7 @@ export async function GET(request: Request): Promise<Response> {
     outHeaders.set("cache-control", "private, no-store");
     return new Response(res.body, { status: res.status, headers: outHeaders });
   } catch (error) {
-    noteFailure(payload.u);
+    noteFailure(target);
     const status = error instanceof UpstreamError ? error.status : 502;
     logger.warn("stream_proxy_error", {
       target: sanitizeUrl(payload.u),

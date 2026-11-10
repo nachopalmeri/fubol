@@ -32,7 +32,7 @@ afterAll(async () => {
 });
 
 async function sessionFor(path: string) {
-  const source = upsertLiveSource({ kind: "hls", name: `Fixture ${path}`, url: `${base}${path}` });
+  const source = await upsertLiveSource({ kind: "hls", name: `Fixture ${path}`, url: `${base}${path}` });
   const channel = (await getAllChannels()).find((item) => item.sourceId === source.id);
   if (!channel) throw new Error("Fixture channel missing");
   return buildLiveSession(channel.id);
@@ -43,7 +43,21 @@ describe("live session source validation", () => {
     const session = await sessionFor(path);
     expect(session.failed).toBeGreaterThan(0);
     expect(session.sources).toEqual([]);
-    expect(session.notes).toContain("Ninguna fuente respondió");
+    // The note must exist and must not be the bare "nothing responded" the
+    // screen used to show: in practice the addon answers an unavailable match
+    // with a placeholder page, and the viewer needs to know which it was.
+    expect(session.notes.length).toBeGreaterThan(0);
+    expect(session.notes.join(" ")).not.toBe("Ninguna fuente respondió");
+  });
+
+  it("says a web page is an agenda entry, not a signal", async () => {
+    const session = await sessionFor("/html");
+    expect(session.notes.join(" ")).toMatch(/página web|no son video|agenda/i);
+  });
+
+  it("suggests retrying when the origin merely failed to answer", async () => {
+    const session = await sessionFor("/unavailable");
+    expect(session.notes.join(" ")).toMatch(/Reanalizar|momentáneo|no respondieron/i);
   });
 
   it("keeps verified HLS available", async () => {
@@ -52,7 +66,7 @@ describe("live session source validation", () => {
     expect(session.sources[0]).toMatchObject({ kind: "hls", proxied: true });
   });
   it("routes a relay-enabled source through the local compatibility relay", async () => {
-    const source = upsertLiveSource({
+    const source = await upsertLiveSource({
       id: "relay-session-test",
       kind: "hls",
       name: "Relay source",
@@ -68,10 +82,10 @@ describe("live session source validation", () => {
     expect(session.sources[0]?.note).toContain("Re-encode");
   });
   it("invalidates cached channel data immediately when a source is edited", async () => {
-    upsertLiveSource({ id: "cache-revision-test", kind: "hls", name: "Old source", url: `${base}/html` });
+    await upsertLiveSource({ id: "cache-revision-test", kind: "hls", name: "Old source", url: `${base}/html` });
     const old = (await getAllChannels()).find((channel) => channel.sourceId === "cache-revision-test");
     expect(old?.name).toBe("Old source");
-    upsertLiveSource({ id: "cache-revision-test", kind: "hls", name: "Updated source", url: `${base}/valid.m3u8` });
+    await upsertLiveSource({ id: "cache-revision-test", kind: "hls", name: "Updated source", url: `${base}/valid.m3u8` });
     const updated = (await getAllChannels()).find((channel) => channel.sourceId === "cache-revision-test");
     expect(updated?.name).toBe("Updated source");
     expect(updated?.urls).toEqual([`${base}/valid.m3u8`]);

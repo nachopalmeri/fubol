@@ -15,7 +15,7 @@ export function maskConfig(config: LiveSourceConfig): LiveSourceConfig {
 
 export const GET = route("admin_sources", async () => {
   await requireAdmin();
-  const sources = listLiveSources(true).map((source) => ({
+  const sources = (await listLiveSources(true)).map((source) => ({
     ...source,
     config: maskConfig(source.config),
   }));
@@ -50,7 +50,7 @@ export const POST = route("admin_sources_upsert", async (request) => {
     return json({ error: "El addon de vivo necesita catalogId" }, { status: 400 });
   }
 
-  const source = upsertLiveSource({
+  const source = await upsertLiveSource({
     id: body.id,
     kind: body.kind,
     name: body.name.trim().slice(0, 80),

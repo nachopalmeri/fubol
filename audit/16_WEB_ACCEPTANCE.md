@@ -4,6 +4,19 @@ Date: 2026-10-28. Local Windows/Chrome checks. This is not a declaration that ev
 
 Later evidence/correction: after the old Node process stopped, its saved sweep logs revealed Sports Streams HTTP 429 responses. Thus the 72-entry sweep's many no-source results include upstream rate limiting, not only proven absent video. Do not interpret that sweep as 71 permanently dead sources. Final deployment, new features and remaining blockers are recorded in `18_FAMILY_RELEASE.md`.
 
+> **Correction, 2026-11-01 — the "FAIL for sports" row below is stale and wrong.**
+> Re-measured during a live match window, the sports addon returned validated,
+> playable sources: Getafe vs Sevilla 2 of 4 sources accepted, Lazio vs
+> Cagliari 4 of 4, Athletic Bilbao vs Real Sociedad 3 of 3, with measured edge
+> ages of 15.7-18.8 s and stable segment advance over 55 s. The 2026-10-28
+> sweep ran outside match hours and into HTTP 429, so it measured "no match is
+> on right now", not "no source works". The addon is viable **inside a live
+> window**; it answers a scheduled-but-not-yet-playing match with a placeholder
+> (a Google page, or its own `/health` endpoint), which the probe correctly
+> rejects. The watch screen now explains which of those happened instead of
+> saying "Ninguna fuente respondió". Delay methodology and figures:
+> `22_DELAY_MEASUREMENT.md`.
+
 ## Changes
 
 - AIOStreams recovered without resetting data or credentials. Its initial anime database rebuild took 4m 9s; subsequent dataset refreshes completed and the server became healthy. The earlier unhealthy state was observed before startup finished.

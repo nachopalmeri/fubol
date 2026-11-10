@@ -12,7 +12,7 @@ function sanitize<T extends { pinHash: string | null }>(link: T): Omit<T, "pinHa
 
 export const GET = route("admin_links", async () => {
   await requireAdmin();
-  return json({ links: listShareLinks().map(sanitize) });
+  return json({ links: (await listShareLinks()).map(sanitize) });
 });
 
 export const POST = route("admin_links_create", async (request) => {
@@ -32,7 +32,7 @@ export const POST = route("admin_links_create", async (request) => {
   if (body.pin && !/^\d{4,8}$/.test(body.pin)) {
     return json({ error: "El PIN debe tener 4 a 8 dígitos" }, { status: 400 });
   }
-  const link = createShareLink({
+  const link = await createShareLink({
     label: body.label?.slice(0, 60) || "Familia",
     permissions,
     expiresInDays: body.expiresInDays ?? null,

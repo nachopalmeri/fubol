@@ -4,6 +4,7 @@ import { mapLimit } from "../http";
 import { logger } from "../logger";
 import { getChannelById, getLiveSource, normalizeChannelName, relatedChannels } from "./sources";
 import { probeSource } from "./probe";
+import { relayAvailable } from "./relay";
 import { rankProbes } from "./rank";
 import type { Channel, PlaySource, ProbeResult } from "./types";
 
@@ -23,7 +24,15 @@ interface Candidate {
   referer?: string;
   /** Origin is not browser-compatible and must be re-encoded by the local relay. */
   relay?: boolean;
+  /** The source asks for a relay but this host cannot run one (serverless). */
+  relayBlocked?: boolean;
   relayHeight?: number;
+  /**
+   * How to ask the addon for this stream again. Providers that bind the
+   * stream token to the caller's IP only accept it from the same address, so
+   * the proxy re-resolves instead of replaying a URL minted elsewhere.
+   */
+  addon?: { i: string; t: string; s: string };
 }
 
 function addonCandidates(
@@ -47,6 +56,7 @@ function addonCandidates(
       label: `${source.name}${height ? ` · ${height}p` : ""}`,
       channel,
       headers: requestHeaders,
+      addon: { i: channel.addon!.itemId, t: channel.addon!.type, s: channel.addon!.addonId },
     });
   }
   return candidates;
@@ -54,10 +64,10 @@ function addonCandidates(
 
 async function resolveAddonChannel(channel: Channel): Promise<Candidate[]> {
   if (!channel.addon) return [];
-  const source = getLiveSource(channel.sourceId);
+  const source = await getLiveSource(channel.sourceId);
   if (!source) throw new Error("Fuente de addon no encontrada");
   const ref = { id: channel.sourceId, name: channel.sourceName, url: source.url, kind: "live" as const };
-  const streams = await getStreams(ref, channel.addon.type, channel.addon.itemId);
+  const streams = await getStreams(ref, channel.addon.type, channel.addon.itemId, { fresh: true });
   return addonCandidates(channel, source, streams);
 }
 
@@ -82,8 +92,15 @@ export async function buildLiveSession(channelId: string, maxSources = 6): Promi
   if (candidates.length === 0) {
     const siblings = await relatedChannels(channel, 5);
     const all = [channel, ...siblings];
+    const configs = new Map(
+      await Promise.all(
+        all.map(async (item) => [item.id, (await getLiveSource(item.sourceId))?.config] as const),
+      ),
+    );
+    const canRelay = relayAvailable();
     candidates = all.flatMap((item) => {
-      const config = getLiveSource(item.sourceId)?.config;
+      const config = configs.get(item.id);
+      const wantsRelay = config?.relay === true;
       return item.urls.map((url) => ({
         url,
         label:
@@ -92,7 +109,8 @@ export async function buildLiveSession(channelId: string, maxSources = 6): Promi
             : `${item.sourceName} · ${normalizeChannelName(item.name) === normalizeChannelName(channel.name) ? "espejo" : item.name}`,
         channel: item,
         headers: item.headers,
-        relay: config?.relay === true,
+        relay: wantsRelay && canRelay,
+        relayBlocked: wantsRelay && !canRelay,
         relayHeight: config?.relayHeight,
       }));
     });
@@ -110,16 +128,32 @@ export async function buildLiveSession(channelId: string, maxSources = 6): Promi
     throw new Error("Este canal no tiene fuentes configuradas");
   }
 
-  const probes = await mapLimit(list, 4, async (candidate) => ({
-    candidate,
-    probe: await probeSource(candidate.url, {
+  const probe = (candidate: Candidate, timeoutMs: number) =>
+    probeSource(candidate.url, {
       sourceId: candidate.channel.sourceId,
       channelId: candidate.channel.id,
       headers: candidate.headers,
       referer: candidate.referer,
-      timeoutMs: 7000,
-    }),
+      timeoutMs,
+    });
+
+  let probes = await mapLimit(list, 4, async (candidate) => ({
+    candidate,
+    probe: await probe(candidate, 7000),
   }));
+
+  // A restreamer that has just been woken up (or that throttles a burst of
+  // parallel requests) fails the whole first batch with a timeout. Retrying one
+  // at a time with a longer budget recovers that case instead of telling the
+  // viewer the channel is down.
+  if (!probes.some((entry) => entry.probe.ok)) {
+    logger.info("live_session_probe_retry", { channelId, candidates: probes.length });
+    const retried = await mapLimit(list, 1, async (candidate) => ({
+      candidate,
+      probe: await probe(candidate, 12_000),
+    }));
+    probes = retried.map((entry, index) => (entry.probe.ok ? entry : probes[index] ?? entry));
+  }
 
   const sorted = rankProbes(probes);
   const ok = sorted.filter((entry) => entry.probe.ok);
@@ -129,7 +163,10 @@ export async function buildLiveSession(channelId: string, maxSources = 6): Promi
   // Rejected HTML, gates and unsupported media are not playable fallbacks.
   // Reanalysis can probe a recovered origin again without feeding it to Hls.js.
 
-  if (playSources.length === 0) notes.push("Ninguna fuente respondió");
+  if (playSources.length === 0) notes.push(rejectionNote(failed.map((entry) => entry.probe)));
+
+  const dispersion = edgeDispersionNote(playSources);
+  if (dispersion) notes.push(dispersion);
 
   return {
     channel,
@@ -161,16 +198,72 @@ function toPlaySource(candidate: Candidate, probe: ProbeResult): PlaySource {
           referer: candidate.referer,
           sourceId: candidate.channel.sourceId,
           kind: "live",
+          addon: candidate.addon,
         }),
     kind: probe.kind === "mp4" ? "mp4" : "hls",
     score: probe.score,
     ttfbMs: probe.ttfbMs,
     edgeAgeS: probe.edgeAgeS,
+    edgeTrust: probe.edgeTrust,
+    targetDuration: probe.targetDuration,
     height: probe.height,
-    note: [candidate.relay ? "Re-encode local para compatibilidad web" : null, probe.error]
+    note: [
+      candidate.relay ? "Re-encode local: suma su propio delay" : null,
+      candidate.relayBlocked
+        ? "La fuente pedía re-encode y este servidor no lo hace: se sirve la señal original"
+        : null,
+      probe.edgeTrust === "implausible"
+        ? "El origen informa un reloj imposible; su delay no se puede verificar"
+        : null,
+      probe.error,
+    ]
       .filter(Boolean)
       .join(" · ") || undefined,
     proxied: true,
+    relayed: candidate.relay === true,
     headers: candidate.headers,
   };
+}
+
+/**
+ * Explains why nothing played. "Ninguna fuente respondió" was accurate and
+ * useless: in practice the addon answers a scheduled-but-unavailable match
+ * with a placeholder like a Google page or its own /health endpoint, and the
+ * probe rejects it. Saying which of those happened is the difference between
+ * "esperá y reintentá" and "este partido no tiene señal todavía".
+ */
+function rejectionNote(probes: ProbeResult[]): string {
+  if (probes.length === 0) return "La fuente no ofreció ninguna señal para este partido";
+  const gates = probes.filter((probe) => probe.gate || probe.error?.includes("html")).length;
+  const unsupported = probes.filter((probe) => probe.kind === "ts" || probe.error?.includes("Formato")).length;
+  const dead = probes.filter((probe) => probe.error?.includes("respondió") || probe.error?.includes("Timeout")).length;
+  if (gates === probes.length) {
+    return "La fuente devolvió una página web en lugar de una señal: este partido todavía no tiene transmisión";
+  }
+  if (gates + unsupported === probes.length) {
+    return `La fuente devolvió ${probes.length} entrada(s) que no son video reproducible: es agenda, no señal`;
+  }
+  if (dead > 0) {
+    return `${dead} de ${probes.length} fuente(s) no respondieron. Puede ser momentáneo: probá "Reanalizar"`;
+  }
+  return `Se descartaron ${probes.length} fuente(s) por no ser video válido`;
+}
+
+/**
+ * Four sources carrying the same match reported PROGRAM-DATE-TIME values up to
+ * 33 seconds apart, so at most one of them can be right. When the readings
+ * disagree that badly they cannot be compared against each other, and saying so
+ * is more useful than ranking by a number that is mostly noise.
+ */
+const EDGE_DISPERSION_WARN_S = 10;
+
+function edgeDispersionNote(sources: PlaySource[]): string | null {
+  const ages = sources
+    .filter((source) => source.edgeTrust === "measured" || source.edgeTrust === "extrapolated")
+    .map((source) => source.edgeAgeS)
+    .filter((age): age is number => age !== null);
+  if (ages.length < 2) return null;
+  const spread = Math.max(...ages) - Math.min(...ages);
+  if (spread < EDGE_DISPERSION_WARN_S) return null;
+  return `Las fuentes informan delays que difieren en ${Math.round(spread)} s: los relojes de origen no coinciden y el delay mostrado es aproximado`;
 }

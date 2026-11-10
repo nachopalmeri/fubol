@@ -20,7 +20,9 @@ ENV NODE_ENV=production \
     HOSTNAME=0.0.0.0 \
     FUBOL_DATA_DIR=/data
 
-# ffmpeg is only used by the optional audio-sync sidecar path.
+# ffmpeg is required, not optional: the live compatibility relay re-encodes
+# every origin the browser cannot play natively, which is how the Argentine
+# channels are served. ffprobe backs the subtitle audio-sync path.
 RUN apk add --no-cache ffmpeg \
     && addgroup -g 1001 -S nodejs \
     && adduser -S fubol -u 1001

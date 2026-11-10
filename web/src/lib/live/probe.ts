@@ -1,4 +1,4 @@
-import { run } from "../db";
+import { recordCheck } from "../metrics";
 import { fetchText, fetchUpstream, detectGate, readTextLimited, looksLikePlaylist, UpstreamError } from "../http";
 import { sanitizeUrl } from "../crypto";
 import { parseHlsPlaylist, selectVariant } from "./playlist";
@@ -24,6 +24,8 @@ function fail(url: string, options: ProbeOptions, error: string, extra: Partial<
     score: 0,
     ttfbMs: 0,
     edgeAgeS: null,
+    edgeTrust: "none",
+    edgeRawS: null,
     targetDuration: null,
     live: false,
     height: null,
@@ -36,20 +38,18 @@ function fail(url: string, options: ProbeOptions, error: string, extra: Partial<
 
 function persist(result: ProbeResult, status: number | null): void {
   try {
-    run(
-      "INSERT INTO source_checks(source_id, target, ok, ttfb_ms, edge_age_s, status, error, checked_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?)",
-      result.sourceId ?? null,
-      sanitizeUrl(result.url),
-      result.ok ? 1 : 0,
-      result.ttfbMs,
-      result.edgeAgeS,
+    recordCheck({
+      sourceId: result.sourceId ?? null,
+      target: sanitizeUrl(result.url),
+      ok: result.ok,
+      ttfbMs: result.ttfbMs,
+      edgeAgeS: result.edgeAgeS,
+      edgeTrust: result.edgeTrust,
+      edgeRawS: result.edgeRawS,
       status,
-      result.error ?? null,
-      result.checkedAt,
-    );
-    if (Math.random() < 0.05) {
-      run("DELETE FROM source_checks WHERE checked_at < ?", Date.now() - 7 * 24 * 3600_000);
-    }
+      error: result.error ?? null,
+      checkedAt: result.checkedAt,
+    });
   } catch {
     // Metrics must never break playback.
   }
@@ -84,9 +84,14 @@ export async function probeSource(url: string, options: ProbeOptions = {}): Prom
       if (!looksLikePlaylist(text)) return finalize(fail(url, options, "El origen no es un HLS válido"), status);
 
       let playlist = parseHlsPlaylist(text, finalUrl, now);
+      // A media playlist carries no RESOLUTION, so the height only exists on
+      // the master's STREAM-INF. Remember it before descending, otherwise
+      // every multi-variant source reports an unknown resolution.
+      let variantHeight: number | null = null;
       if (playlist.isMaster) {
         const variant = selectVariant(playlist.variants, 1080);
         if (variant) {
+          variantHeight = variant.height ?? null;
           const sub = await fetchText(variant.uri, {
             headers,
             timeoutMs: 6000,
@@ -110,9 +115,11 @@ export async function probeSource(url: string, options: ProbeOptions = {}): Prom
         score: 0,
         ttfbMs: ms,
         edgeAgeS: playlist.edgeAgeS,
+        edgeTrust: playlist.edgeTrust,
+        edgeRawS: playlist.edgeRawS,
         targetDuration: playlist.targetDuration,
         live: playlist.live,
-        height: playlist.height ?? null,
+        height: playlist.height ?? variantHeight,
         bitrate: playlist.bitrate,
         checkedAt: now,
       };

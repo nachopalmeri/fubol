@@ -1,3 +1,7 @@
+import type { EdgeTrust } from "./playlist";
+
+export type { EdgeTrust };
+
 export type LiveSourceKind = "hls" | "m3u" | "xtream" | "addon";
 
 export interface DirectChannel {
@@ -60,7 +64,11 @@ export interface ProbeResult {
   kind: "hls" | "mp4" | "ts" | "unknown";
   score: number;
   ttfbMs: number;
+  /** Null unless the playlist carried a usable PROGRAM-DATE-TIME. */
   edgeAgeS: number | null;
+  edgeTrust: EdgeTrust;
+  /** Unclamped edge reading, kept even when rejected, for diagnostics. */
+  edgeRawS: number | null;
   targetDuration: number | null;
   live: boolean;
   height: number | null;
@@ -78,9 +86,14 @@ export interface PlaySource {
   score: number;
   ttfbMs: number;
   edgeAgeS: number | null;
+  edgeTrust: EdgeTrust;
+  /** Segment length at the origin: the player sizes its buffer from this. */
+  targetDuration: number | null;
   height: number | null;
   note?: string;
   /** True when the URL must go through /api/stream (no CORS or custom headers). */
   proxied: boolean;
+  /** Playback goes through the local ffmpeg relay, which adds its own delay. */
+  relayed?: boolean;
   headers?: Record<string, string>;
 }

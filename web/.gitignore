@@ -8,3 +8,6 @@ data/
 .env.*
 !.env.example
 *.log
+
+.vercel
+.env*

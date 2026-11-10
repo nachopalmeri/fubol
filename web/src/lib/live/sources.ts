@@ -1,57 +1,43 @@
-import { cacheGet, cacheSet, all, get, run } from "../db";
+import { cacheGet, cacheSet } from "../cache";
 import { fetchText, UpstreamError } from "../http";
 import { shortHash, sanitizeUrl } from "../crypto";
 import { logger } from "../logger";
 import { getCatalog, getManifest, type AddonMetaPreview } from "../addons";
+import { mutateState, readState } from "../state";
+import type { SourceRecord } from "../state/types";
 import { entriesToChannels, parseM3u } from "./m3u";
 import { fetchXtreamChannels } from "./xtream";
 import type { Channel, LiveSource, LiveSourceConfig, LiveSourceKind } from "./types";
 
-interface SourceRow {
-  id: string;
-  kind: LiveSourceKind;
-  name: string;
-  url: string;
-  config: string;
-  enabled: number;
-  priority: number;
-  created_at: number;
-  updated_at: number;
-}
-
-function toSource(row: SourceRow): LiveSource {
-  let config: LiveSourceConfig = {};
-  try {
-    config = JSON.parse(row.config) as LiveSourceConfig;
-  } catch {
-    config = {};
-  }
+function toSource(record: SourceRecord): LiveSource {
   return {
-    id: row.id,
-    kind: row.kind,
-    name: row.name,
-    url: row.url,
-    config,
-    enabled: row.enabled === 1,
-    priority: row.priority,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
+    id: record.id,
+    kind: record.kind,
+    name: record.name,
+    url: record.url,
+    config: record.config as LiveSourceConfig,
+    enabled: record.enabled,
+    priority: record.priority,
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
   };
 }
 
-export function listLiveSources(includeDisabled = false): LiveSource[] {
-  const sql = includeDisabled
-    ? "SELECT * FROM live_sources ORDER BY priority ASC, created_at ASC"
-    : "SELECT * FROM live_sources WHERE enabled = 1 ORDER BY priority ASC, created_at ASC";
-  return all<SourceRow>(sql).map(toSource);
+export async function listLiveSources(includeDisabled = false): Promise<LiveSource[]> {
+  const doc = await readState();
+  return doc.sources
+    .filter((source) => (includeDisabled ? true : source.enabled))
+    .sort((a, b) => a.priority - b.priority || a.createdAt - b.createdAt)
+    .map(toSource);
 }
 
-export function getLiveSource(id: string): LiveSource | undefined {
-  const row = get<SourceRow>("SELECT * FROM live_sources WHERE id = ?", id);
-  return row ? toSource(row) : undefined;
+export async function getLiveSource(id: string): Promise<LiveSource | undefined> {
+  const doc = await readState();
+  const record = doc.sources.find((source) => source.id === id);
+  return record ? toSource(record) : undefined;
 }
 
-export function upsertLiveSource(input: {
+export async function upsertLiveSource(input: {
   id?: string;
   kind: LiveSourceKind;
   name: string;
@@ -59,42 +45,43 @@ export function upsertLiveSource(input: {
   config?: LiveSourceConfig;
   enabled?: boolean;
   priority?: number;
-}): LiveSource {
+}): Promise<LiveSource> {
   const now = Date.now();
   const id = input.id ?? shortHash(`${input.kind}:${input.url}:${now}`, 12);
-  const existing = getLiveSource(id);
-  if (existing) {
-    run(
-      "UPDATE live_sources SET kind = ?, name = ?, url = ?, config = ?, enabled = ?, priority = ?, updated_at = ? WHERE id = ?",
-      input.kind,
-      input.name,
-      input.url,
-      JSON.stringify(input.config ?? {}),
-      input.enabled === false ? 0 : 1,
-      input.priority ?? existing.priority,
-      now,
+  const source = await mutateState((doc) => {
+    const existing = doc.sources.find((item) => item.id === id);
+    if (existing) {
+      existing.kind = input.kind;
+      existing.name = input.name;
+      existing.url = input.url;
+      existing.config = (input.config ?? {}) as Record<string, unknown>;
+      existing.enabled = input.enabled !== false;
+      existing.priority = input.priority ?? existing.priority;
+      existing.updatedAt = now;
+      return { ...existing };
+    }
+    const record: SourceRecord = {
       id,
-    );
-  } else {
-    run(
-      "INSERT INTO live_sources(id, kind, name, url, config, enabled, priority, created_at, updated_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)",
-      id,
-      input.kind,
-      input.name,
-      input.url,
-      JSON.stringify(input.config ?? {}),
-      input.enabled === false ? 0 : 1,
-      input.priority ?? 100,
-      now,
-      now,
-    );
-  }
+      kind: input.kind,
+      name: input.name,
+      url: input.url,
+      config: (input.config ?? {}) as Record<string, unknown>,
+      enabled: input.enabled !== false,
+      priority: input.priority ?? 100,
+      createdAt: now,
+      updatedAt: now,
+    };
+    doc.sources.push(record);
+    return { ...record };
+  });
   invalidateChannelCache();
-  return getLiveSource(id) as LiveSource;
+  return toSource(source);
 }
 
-export function deleteLiveSource(id: string): void {
-  run("DELETE FROM live_sources WHERE id = ?", id);
+export async function deleteLiveSource(id: string): Promise<void> {
+  await mutateState((doc) => {
+    doc.sources = doc.sources.filter((source) => source.id !== id);
+  });
   invalidateChannelCache();
 }
 
@@ -193,7 +180,7 @@ export function invalidateChannelCache(): void {
 
 export async function getAllChannels(): Promise<Channel[]> {
   if (indexCache && Date.now() - indexCache.at < 60_000) return indexCache.channels;
-  const sources = listLiveSources();
+  const sources = await listLiveSources();
   const results = await Promise.allSettled(sources.map((source) => loadChannels(source)));
   const channels: Channel[] = [];
   for (const result of results) {

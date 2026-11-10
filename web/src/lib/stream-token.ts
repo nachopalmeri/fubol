@@ -7,6 +7,12 @@ export interface StreamTokenPayload extends Record<string, unknown> {
   s?: string;
   k?: "live" | "vod";
   d?: string;
+  /**
+   * Addon reference for live channels: the provider's stream URL carries a
+   * token bound to the IP that asked for it, so the proxy resolves the addon
+   * again instead of replaying a URL that another instance cannot use.
+   */
+  a?: { i: string; t: string; s: string };
 }
 
 const ALLOWED_HEADERS = new Set(["user-agent", "referer", "origin", "accept", "accept-language"]);
@@ -25,7 +31,13 @@ export function sanitizeHeaders(headers: Record<string, string> | undefined): Re
 
 export function signStreamUrl(
   url: string,
-  options: { referer?: string; headers?: Record<string, string>; sourceId?: string; kind?: "live" | "vod" } = {},
+  options: {
+    referer?: string;
+    headers?: Record<string, string>;
+    sourceId?: string;
+    kind?: "live" | "vod";
+    addon?: { i: string; t: string; s: string };
+  } = {},
   ttlMs = 6 * 3600_000,
 ): string {
   const token = signToken(
@@ -35,6 +47,7 @@ export function signStreamUrl(
       ...(options.headers ? { h: sanitizeHeaders(options.headers) } : {}),
       ...(options.sourceId ? { s: options.sourceId } : {}),
       ...(options.kind ? { k: options.kind } : {}),
+      ...(options.addon ? { a: options.addon } : {}),
     },
     ttlMs,
   );

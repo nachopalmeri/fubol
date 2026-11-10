@@ -1,12 +1,32 @@
-import { DatabaseSync } from "node:sqlite";
 import path from "node:path";
 import { dataDir, ensureDataDir } from "./env";
+import { normalizeState, type StateDoc } from "./state/types";
 
-export type SqlRow = Record<string, string | number | bigint | null | Uint8Array>;
-
-const globalForDb = globalThis as unknown as { __fubolDb?: DatabaseSync };
+/**
+ * SQLite persistence for a long-running host (the family server / Docker).
+ *
+ * The mutable state is one JSON document, so the schema is one row: that keeps
+ * reads and writes trivial, makes the same code path work for the Blob backend
+ * used on serverless, and removes the WAL churn the old per-query tables had.
+ * The old tables are read once, on the first boot after upgrading, and their
+ * contents become the document.
+ */
+type SqliteDb = {
+  exec(sql: string): void;
+  prepare(sql: string): {
+    get(...params: (string | number | null)[]): unknown;
+    all(...params: (string | number | null)[]): unknown[];
+    run(...params: (string | number | null)[]): { changes: number | bigint };
+  };
+  close(): void;
+};
 
 const SCHEMA = `
+CREATE TABLE IF NOT EXISTS state_doc (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  value TEXT NOT NULL,
+  updated_at INTEGER NOT NULL
+);
 CREATE TABLE IF NOT EXISTS share_links (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   code TEXT UNIQUE NOT NULL,
@@ -18,7 +38,6 @@ CREATE TABLE IF NOT EXISTS share_links (
   created_at INTEGER NOT NULL,
   last_seen_at INTEGER
 );
-
 CREATE TABLE IF NOT EXISTS live_sources (
   id TEXT PRIMARY KEY,
   kind TEXT NOT NULL,
@@ -30,7 +49,6 @@ CREATE TABLE IF NOT EXISTS live_sources (
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 );
-
 CREATE TABLE IF NOT EXISTS addons (
   id TEXT PRIMARY KEY,
   url TEXT NOT NULL UNIQUE,
@@ -40,152 +58,150 @@ CREATE TABLE IF NOT EXISTS addons (
   config TEXT NOT NULL DEFAULT '{}',
   created_at INTEGER NOT NULL
 );
-
-CREATE TABLE IF NOT EXISTS source_checks (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  source_id TEXT,
-  target TEXT,
-  ok INTEGER NOT NULL,
-  ttfb_ms INTEGER,
-  edge_age_s REAL,
-  status INTEGER,
-  error TEXT,
-  checked_at INTEGER NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS cache (
-  key TEXT PRIMARY KEY,
-  value TEXT NOT NULL,
-  expires_at INTEGER NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS jobs (
-  id TEXT PRIMARY KEY,
-  kind TEXT NOT NULL,
-  status TEXT NOT NULL,
-  progress REAL NOT NULL DEFAULT 0,
-  input TEXT,
-  output TEXT,
-  error TEXT,
-  created_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS events (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  kind TEXT NOT NULL,
-  source_id TEXT,
-  link_id TEXT,
-  ok INTEGER NOT NULL DEFAULT 1,
-  ms INTEGER,
-  detail TEXT,
-  created_at INTEGER NOT NULL
-);
-
 CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL
 );
-
-CREATE INDEX IF NOT EXISTS idx_checks_source ON source_checks(source_id, checked_at);
-CREATE INDEX IF NOT EXISTS idx_events_created ON events(created_at);
-CREATE INDEX IF NOT EXISTS idx_links_code ON share_links(code);
 `;
 
-export function getDb(): DatabaseSync {
+const globalForDb = globalThis as unknown as { __fubolDb?: Promise<SqliteDb> };
+
+function open(): Promise<SqliteDb> {
   if (!globalForDb.__fubolDb) {
-    ensureDataDir();
-    const file = path.join(dataDir, "fubol.sqlite");
-    const db = new DatabaseSync(file);
-    db.exec("PRAGMA journal_mode = WAL;");
-    db.exec("PRAGMA synchronous = NORMAL;");
-    db.exec("PRAGMA busy_timeout = 5000;");
-    db.exec("PRAGMA foreign_keys = ON;");
-    db.exec(SCHEMA);
-    globalForDb.__fubolDb = db;
+    globalForDb.__fubolDb = (async () => {
+      ensureDataDir();
+      const { DatabaseSync } = await import("node:sqlite");
+      const db = new DatabaseSync(path.join(dataDir, "fubol.sqlite")) as unknown as SqliteDb;
+      db.exec("PRAGMA journal_mode = WAL;");
+      db.exec("PRAGMA synchronous = NORMAL;");
+      db.exec("PRAGMA busy_timeout = 5000;");
+      db.exec(SCHEMA);
+      return db;
+    })().catch((error) => {
+      globalForDb.__fubolDb = undefined;
+      throw error;
+    });
   }
   return globalForDb.__fubolDb;
 }
 
-export function all<T = SqlRow>(sql: string, ...params: (string | number | null)[]): T[] {
-  return getDb().prepare(sql).all(...params) as T[];
+interface LegacyLink {
+  id: number;
+  code: string;
+  label: string;
+  permissions: string;
+  pin_hash: string | null;
+  expires_at: number | null;
+  revoked_at: number | null;
+  created_at: number;
+  last_seen_at: number | null;
 }
 
-export function get<T = SqlRow>(sql: string, ...params: (string | number | null)[]): T | undefined {
-  return getDb().prepare(sql).get(...params) as T | undefined;
-}
-
-export function run(
-  sql: string,
-  ...params: (string | number | null)[]
-): { changes: number; lastInsertRowid: number } {
-  const result = getDb().prepare(sql).run(...params);
-  return {
-    changes: Number(result.changes),
-    lastInsertRowid: Number(result.lastInsertRowid),
-  };
-}
-
-export function cacheGet<T>(key: string): T | undefined {
-  const row = get<{ value: string; expires_at: number }>(
-    "SELECT value, expires_at FROM cache WHERE key = ?",
-    key,
-  );
-  if (!row) return undefined;
-  if (row.expires_at < Date.now()) {
-    run("DELETE FROM cache WHERE key = ?", key);
-    return undefined;
-  }
-  try {
-    return JSON.parse(row.value) as T;
-  } catch {
-    return undefined;
-  }
-}
-
-export function cacheSet(key: string, value: unknown, ttlMs: number): void {
-  run(
-    "INSERT INTO cache(key, value, expires_at) VALUES(?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, expires_at = excluded.expires_at",
-    key,
-    JSON.stringify(value),
-    Date.now() + ttlMs,
-  );
-  if (Math.random() < 0.05) {
-    run("DELETE FROM cache WHERE expires_at < ?", Date.now());
-  }
-}
-
-export function getSetting(key: string): string | undefined {
-  return get<{ value: string }>("SELECT value FROM settings WHERE key = ?", key)?.value;
-}
-
-export function setSetting(key: string, value: string): void {
-  run(
-    "INSERT INTO settings(key, value) VALUES(?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-    key,
-    value,
-  );
-}
-
-export function recordEvent(entry: {
+interface LegacySource {
+  id: string;
   kind: string;
-  sourceId?: string | null;
-  linkId?: string | null;
-  ok?: boolean;
-  ms?: number | null;
-  detail?: string | null;
-}): void {
-  run(
-    "INSERT INTO events(kind, source_id, link_id, ok, ms, detail, created_at) VALUES(?, ?, ?, ?, ?, ?, ?)",
-    entry.kind,
-    entry.sourceId ?? null,
-    entry.linkId ?? null,
-    entry.ok === false ? 0 : 1,
-    entry.ms ?? null,
-    entry.detail ?? null,
-    Date.now(),
-  );
-  if (Math.random() < 0.02) {
-    run("DELETE FROM events WHERE created_at < ?", Date.now() - 30 * 24 * 3600_000);
+  name: string;
+  url: string;
+  config: string;
+  enabled: number;
+  priority: number;
+  created_at: number;
+  updated_at: number;
+}
+
+interface LegacyAddon {
+  id: string;
+  url: string;
+  name: string | null;
+  kind: string;
+  enabled: number;
+  config: string;
+  created_at: number;
+}
+
+function parseConfig(value: string): Record<string, unknown> {
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
   }
+}
+
+async function migrateLegacy(db: SqliteDb): Promise<StateDoc | null> {
+  try {
+    const links = db.prepare("SELECT * FROM share_links ORDER BY id ASC").all() as LegacyLink[];
+    const sources = db.prepare("SELECT * FROM live_sources ORDER BY created_at ASC").all() as LegacySource[];
+    const addons = db.prepare("SELECT * FROM addons ORDER BY created_at ASC").all() as LegacyAddon[];
+    const settings = db.prepare("SELECT key, value FROM settings").all() as { key: string; value: string }[];
+    if (links.length + sources.length + addons.length + settings.length === 0) return null;
+    return normalizeState({
+      version: 1,
+      nextLinkId: links.reduce((max, link) => Math.max(max, Number(link.id) || 0), 0) + 1,
+      links: links.map((link) => ({
+        id: Number(link.id),
+        code: link.code,
+        label: link.label,
+        permissions: link.permissions,
+        pinHash: link.pin_hash,
+        expiresAt: link.expires_at,
+        revokedAt: link.revoked_at,
+        createdAt: link.created_at,
+        lastSeenAt: link.last_seen_at,
+      })),
+      sources: sources.map((source) => ({
+        id: source.id,
+        kind: source.kind,
+        name: source.name,
+        url: source.url,
+        config: parseConfig(source.config),
+        enabled: source.enabled === 1,
+        priority: source.priority,
+        createdAt: source.created_at,
+        updatedAt: source.updated_at,
+      })),
+      addons: addons.map((addon) => ({
+        id: addon.id,
+        url: addon.url,
+        name: addon.name ?? addon.url,
+        kind: addon.kind,
+        enabled: addon.enabled === 1,
+        createdAt: addon.created_at,
+      })),
+      settings: Object.fromEntries(settings.map((row) => [row.key, row.value])),
+    });
+  } catch {
+    return null;
+  }
+}
+
+export async function readSqliteState(): Promise<{ doc: StateDoc | null; version: string | null }> {
+  const db = await open();
+  const row = db.prepare("SELECT value, updated_at FROM state_doc WHERE id = 1").get() as
+    | { value: string; updated_at: number }
+    | undefined;
+  if (row) {
+    try {
+      return { doc: normalizeState(JSON.parse(row.value)), version: String(row.updated_at) };
+    } catch {
+      // A corrupt document must not brick the app: fall back to the legacy
+      // tables (or an empty state) instead of throwing on every request.
+      return { doc: await migrateLegacy(db), version: null };
+    }
+  }
+  const migrated = await migrateLegacy(db);
+  if (migrated) {
+    await writeSqliteState(migrated);
+    return { doc: migrated, version: String(Date.now()) };
+  }
+  return { doc: null, version: null };
+}
+
+export async function writeSqliteState(doc: StateDoc): Promise<string> {
+  const db = await open();
+  const now = Date.now();
+  db.prepare(
+    "INSERT INTO state_doc(id, value, updated_at) VALUES(1, ?, ?) ON CONFLICT(id) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
+  ).run(JSON.stringify(doc), now);
+  return String(now);
 }

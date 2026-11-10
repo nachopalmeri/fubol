@@ -1,4 +1,5 @@
 import type { AddonRef, RawAddonStream } from "../addons";
+import { looksWebPlayable, resolveTorrentUrl, webPlayableBonus } from "./torrent";
 
 export interface VodSource {
   id: string;
@@ -18,6 +19,8 @@ export interface VodSource {
   spanish: boolean;
   headers?: Record<string, string>;
   filename?: string;
+  /** Resolved from a BitTorrent infoHash by the local streaming server. */
+  viaTorrent?: boolean;
   score: number;
 }
 
@@ -73,20 +76,36 @@ function scoreSource(source: Omit<VodSource, "score">): number {
 export function normalizeStreams(addon: AddonRef, streams: RawAddonStream[]): VodSource[] {
   const sources: VodSource[] = [];
   for (const [index, stream] of streams.entries()) {
-    if (!stream.url) continue;
     const title = stream.title || stream.name || "Fuente";
     const description = stream.description || "";
     const filename = stream.behaviorHints?.filename;
     const haystack = `${title} ${description} ${filename ?? ""}`;
+
+    // A BitTorrent result has no URL. When a local streaming server is
+    // configured it joins the swarm and re-serves the file over HTTP, which is
+    // how Stremio and Nuvio play these same streams; without one, hundreds of
+    // torrents remain unplayable in a browser and are dropped as before.
+    let url = stream.url;
+    let viaTorrent = false;
+    if (!url && stream.infoHash) {
+      if (!looksWebPlayable(haystack)) continue;
+      const resolved = resolveTorrentUrl(stream.infoHash, stream.fileIdx);
+      if (!resolved) continue;
+      url = resolved;
+      viaTorrent = true;
+    }
+    if (!url) continue;
+
     const height = detectHeight(haystack);
     const sizeBytes = stream.behaviorHints?.videoSize ?? parseSize(description) ?? parseSize(title);
     const base = {
-      id: `${addon.id}:${index}:${stream.url.slice(-16)}`,
+      id: `${addon.id}:${index}:${url.slice(-16)}`,
       addonId: addon.id,
       addonName: addon.name,
       title,
       description,
-      url: stream.url,
+      url,
+      viaTorrent,
       quality: height ? `${height}p` : "auto",
       height,
       sizeBytes,
@@ -99,7 +118,10 @@ export function normalizeStreams(addon: AddonRef, streams: RawAddonStream[]): Vo
       headers: stream.behaviorHints?.proxyHeaders?.request,
       filename,
     };
-    sources.push({ ...base, score: scoreSource(base) });
+    // A swarm-backed file only plays as well as its seeders and container, so
+    // a well-seeded MP4/H.264 release outranks a bigger one that may stall.
+    const score = scoreSource(base) + (viaTorrent ? webPlayableBonus(haystack) : 0);
+    sources.push({ ...base, score });
   }
   return sources.sort((a, b) => b.score - a.score);
 }

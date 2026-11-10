@@ -12,10 +12,15 @@ interface VodResponse {
     quality: string;
     sizeLabel?: string | null;
     cached?: boolean;
+    viaTorrent?: boolean;
     spanish?: boolean;
     note?: string;
   })[];
   subtitles: (PlayerSubtitle & { forced?: boolean })[];
+  /** Providers answered with BitTorrent hashes a browser cannot open. */
+  p2pOnly?: number;
+  unconfigured?: { name: string; configureUrl: string | null }[];
+  reason?: string | null;
   error?: string;
 }
 
@@ -88,15 +93,41 @@ export default function VodWatch({
   }
 
   if (!data || data.sources.length === 0) {
+    // "Sin fuentes" was misleading: the providers usually answer with hundreds
+    // of BitTorrent hashes, which is a different problem with a different fix.
+    const p2p = data?.p2pOnly ?? 0;
     return (
       <div className="empty-state">
         <IconAlert size={30} />
-        <h2>Sin fuentes para este título</h2>
+        <h2>{p2p > 0 ? "Las fuentes son torrents, no archivos" : "Sin fuentes para este título"}</h2>
         <p>
-          El catálogo y los subtítulos funcionan, pero ningún addon de streams devolvió un archivo
-          reproducible. Los addons se cargan una sola vez desde el panel y quedan disponibles para
-          todos los links de la familia.
+          {data?.reason ??
+            "Ningún addon de streams devolvió un archivo reproducible para este título."}
         </p>
+        {p2p > 0 && (
+          <p className="empty-hint">
+            Un navegador solo reproduce HTTP. Para abrir estas fuentes hace falta un servicio
+            debrid (TorBox, Real-Debrid, AllDebrid o Premiumize) configurado en el addon: el
+            servicio descarga el torrent y devuelve un link directo.
+          </p>
+        )}
+        {(data?.unconfigured?.length ?? 0) > 0 && (
+          <p className="empty-hint">
+            Proveedores sin configurar:{" "}
+            {data?.unconfigured?.map((item, index) => (
+              <span key={item.name}>
+                {index > 0 ? ", " : ""}
+                {item.configureUrl ? (
+                  <a href={item.configureUrl} target="_blank" rel="noopener noreferrer">
+                    {item.name}
+                  </a>
+                ) : (
+                  item.name
+                )}
+              </span>
+            ))}
+          </p>
+        )}
         <div className="empty-actions">
           {isAdmin ? (
             <Link href="/admin?tab=addons" className="btn btn-primary">
@@ -119,11 +150,17 @@ export default function VodWatch({
   const sources: PlayerSource[] = data.sources.map((source) => ({
     id: source.id,
     label: `${source.addonName} · ${source.quality}${source.cached ? " · cached" : ""}${
-      source.sizeLabel ? ` · ${source.sizeLabel}` : ""
-    }`,
+      source.viaTorrent ? " · P2P" : ""
+    }${source.sizeLabel ? ` · ${source.sizeLabel}` : ""}`,
     url: source.url,
     kind: source.kind,
-    note: source.note,
+    // A swarm source has to find peers before the first byte arrives: measured
+    // at up to a minute cold. Saying so beats looking frozen.
+    note: source.viaTorrent
+      ? [source.note, "Fuente P2P: el primer arranque puede tardar hasta un minuto"]
+          .filter(Boolean)
+          .join(" · ")
+      : source.note,
     score: source.score,
     height: source.height,
     matchedSubtitleIds: source.matchedSubtitleIds,

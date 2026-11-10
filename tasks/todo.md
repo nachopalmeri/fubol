@@ -1,6 +1,22 @@
 # Fubol — estado de ejecución
 
-Actualizado: 2026-10-28
+Actualizado: 2026-11-10
+
+## Despliegue en Vercel (2026-11-10) — lo prioritario funcionando
+- [x] Front y back publicados en `https://fubol-five.vercel.app` (proyecto `fubol`, equipo `nachopalmeris-projects`). Vercel CLI 59.23.2, login `nachopalmeri`.
+- [x] Estado persistente sin Turso ni click legal: un documento JSON con links, fuentes, addons y ajustes, sobre **Vercel Blob privado** (`fubol-state`, `fubol/state.json`) con escritura CAS por ETag. SQLite sigue siendo el backend de Docker/local, con migración automática desde las tablas viejas.
+- [x] Bug real encontrado en producción: `get()` devuelve ETag **débil** (`W/"…"`) y `put()` con `ifMatch` exige el fuerte → toda escritura posterior al seed fallaba con 412 y crear un link familiar devolvía 500. Normalizado en `state/blob.ts`.
+- [x] Bug real encontrado en producción: `TZ=":UTC"` en Vercel hacía que `Intl.DateTimeFormat` tirara `RangeError` y rompiera el render de la home. `env.safeTimeZone()` normaliza y valida.
+- [x] **Addons: manifest personal de Sports Streams aplicado** (estaba en `.secrets/sports-manifest.txt`). Con el manifest público el proveedor exige verificación y todo canal devolvía 409; con el personal se resolvieron 43 canales.
+- [x] **Token atado a la IP**: el JWT del proveedor incluye la IP de quien lo pidió y rechaza la misma URL desde otra dirección (`403 Stream already active on another device`). Como Vercel rota la IP de salida entre invocaciones, el proxy repregunta al addon en cada request (`/api/stream` lleva la referencia del addon en el token firmado). Verificado: Sky Sports Premier League y TNT Sport 2 con playlist 200 y segmentos reales de 3-6 MB; en el navegador 1920x1080 con el delay del origen medido.
+- [x] Panel: ahora se puede **reemplazar el manifest** de un addon (`PATCH /api/admin/addons/[id]`) y de una fuente viva (`PATCH /api/admin/sources/[id]` acepta `url`), con validación del manifest antes de guardar, botón "Configurar ↗" al proveedor y guía por tipo de addon.
+- [x] Panel → Salud muestra la **IP de salida** y avisa cuando el deployment rota entre varias: es la causa de los 403 "stream already active".
+- [x] Sin sustitutos gratuitos: se sacaron los canales públicos de prueba y la franja "Señales que funcionan ahora". `FUBOL_OPEN_FILMS` quedó sin definir (Internet Archive queda disponible pero apagado detrás de la variable).
+- [x] Verificación end-to-end en el deploy: home, /live, /peliculas, /buscar, panel (links, fuentes, addons, salud), link familiar `/f/CODIGO`, película MP4 (640x480, 95 min) con pista de subtítulos, vivo HLS 1080p.
+- [ ] **Pendiente del usuario**: manifest propio de SubSource, SubDL, Community Subtitles, SubSense y OpenSubtitles PRO (piden cuenta). Con la URL pegada en el panel, cada uno queda operativo.
+- [ ] **Pendiente del usuario**: token de debrid para Torrentio/AIOStreams. Sin debrid el addon devuelve `infoHash` y el navegador no lo abre. El manifest personal de AIOStreams en `.secrets/` apunta a `192.168.0.122` (LAN), no alcanzable desde Vercel.
+- [ ] Pendiente del usuario: rotar `FUBOL_ADMIN_PASSWORD` y `FUBOL_SECRET` si se comparten fuera de esta máquina.
+- [ ] El relay de ffmpeg sigue sin existir en Vercel: las fuentes con `relay: true` degradan a la señal original con aviso explícito en la sesión.
 
 ## Family release (current runtime, supersedes older startup notes)
 - [x] Continuation: Sports Streams root cause is a reinstall notice, not a real stream. New configure flow requires provider verification; normal browser opened for user. Runtime diagnostics409 and cache invalidation fixed;112web+2Node tests pass.
@@ -203,3 +219,70 @@ Actualizado: 2026-10-28
 
 ## Hecho 2026-10-22
 F0 cerrado: Docker+WSL2 operativos, `.env` migrado, núcleo sano y smoke test 10/0. Se corrigieron 5 bugs del harness de verificación (ruta CA, espera de health, perfiles opcionales, Schannel/OpenSSL, CRLF del request). Evidencia en `audit/10_RUNTIME_BASELINE.md`.
+
+## Hecho 2026-11-01 (plan de mejora completo; sin tocar fuentes ni addons)
+Verificación: typecheck + lint + 174 tests + build limpio. Evidencia en `audit/22_DELAY_MEASUREMENT.md`.
+
+### Medición honesta del delay (era el objetivo del proyecto)
+- `playlist.ts`: niveles de confianza `measured` / `extrapolated` / `implausible` / `none`. Antes `Math.max(0,...)` convertía un reloj adelantado en "delay 0 s" y el ranking elegía esa fuente. Probado: 4 fuentes del mismo partido difieren hasta 33 s entre sí; el PDT lo re-estampa el re-transmisor.
+- `rank.ts`: el scoring premiaba la ignorancia (fuente sin medir 70 vs fuente con 25 s medidos 67). Ahora el delay domina, el desconocido usa prior neutro de 20 s y la resolución no compra su paso.
+- `Player.tsx`: se separan `origen`, `buffer` y `total`; se usa `hls.playingDate`. Se eliminó `setLatency(0)` cosmético en "Ir al vivo".
+- `probe.ts`: se conserva el `height` del master al bajar a la variante (todas las fuentes reales reportaban `null`).
+- `source_checks` + `/api/admin/health`: columnas `edge_trust`/`edge_raw_s` y conteo de cuántos chequeos pudieron medirse.
+
+### Estabilidad del vivo
+- `Player.tsx`: eliminado el governor manual de `playbackRate`, que con segmentos de 6 s oscilaba entre 1.0 y 1.07 **todo el partido** peleando con `maxLiveSyncPlaybackRate` de hls.js; y podía quedar clavado en 0.98. Ahora `liveSyncDuration` explícito derivado del `targetDuration` real y buffer >= 3 segmentos (antes pedía 12 s de retraso con 8 s de buffer).
+- `relay.ts`: ventana de 5 s -> 20 s; **no se borra el directorio al reiniciar** y se continúa la numeración con `-start_number` (los logs mostraban ffmpeg muriendo a los 10.8 s y 38 s, y el playlist volvía de seq 63 a 0, colgando a hls.js); supervisor con reinicio automático y backoff; `RELAY_MAX_JOBS` 4 -> 6 y no se desaloja a quien pausó; se quitó `-tune zerolatency`; `bufsize` acotado.
+- Ruta del relay: espera un playlist con >= 3 segmentos (ffmpeg publicaba 1) y timeout de 8 s dentro del presupuesto de hls.js (antes 20 s, fuera de su límite de 10 s).
+- `FUBOL_RELAY_DIR` + tmpfs en compose: los segmentos salían del bind mount de Windows vía WSL2.
+
+### Producto
+- Agenda unificada: `fixturesFromChannels` + `mergeChannelFixtures`. TheSportsDB con key `123` devuelve **3 partidos para un domingo entero**; el catálogo tenía 20+ jugándose. Verificado: agenda de 6 -> 36 fixtures (31 en vivo), con Juventus-Napoli y Athletic-Real Sociedad recuperados del catálogo mixto y NFL/NBA/NHL/rugby excluidos.
+- Hero del próximo partido con señal en el home (completa `KickoffCountdown`, que estaba a medio hacer en el working tree).
+- `statusFor`: respeta el estado del feed, 150 min liga / 210 min copa, 25 min antes del kickoff, `postponed` explícito, y deja de creerle a un "NS" rancio pasados 15 min. Antes un partido postergado salía EN VIVO y una copa con penales salía FINAL jugándose.
+- Vacío vs falla distinguidos en home, `/live` y la pantalla de ver; el motivo del rechazo se explica (página web / no es video / no respondió).
+
+### Seguridad
+- `FUBOL_TRUST_PROXY`: `x-forwarded-for` y `x-forwarded-host` ya no se creen por defecto (el puerto 3001 se publica directo, así que se podía forjar la IP y saltar el rate limit, y envenenar el Host daba un open redirect).
+- Lockout progresivo en admin y en el PIN familiar; rate limit en `/api/live/session` (disparaba 6 probes sin límite).
+- CSP; `k !== "vod"` rechazado en el sync por audio; BOM UTF-8 aceptado en playlists (se rechazaban fuentes válidas).
+- `/f/CODIGO`: un link nuevo reemplaza la sesión vieja (antes quedaba en loop a `/entrar` hasta borrar cookies).
+
+### Pendiente real
+- [ ] **El delay absoluto contra el estadio sigue sin medirse.** Todo lo medible es auto-reportado por el origen. Hace falta referencia externa: OCR del reloj del partido, timestamp de gol de una API, o diferencial entre dos fuentes. Ver `audit/22_DELAY_MEASUREMENT.md` sección 6.
+- [ ] El relay sigue sin delay medible: `+program_date_time` da PDT adelantado 0.4-3.2 s porque ffmpeg hereda los timestamps del input. El clasificador lo rechaza (no inventa número), pero el dato no existe.
+- [ ] TheSportsDB free key sigue dando ~3 eventos/día y sin `strTVStation`. Evaluar key paga o usar el catálogo como fuente primaria de agenda.
+- [ ] Sin tests de UI ni E2E en CI; `Player.tsx` (1090 líneas) no tiene cobertura directa. CI no corre el build de Docker.
+- [ ] Docker Desktop se cayó durante esta sesión; la verificación final se hizo con el build standalone en :3002, no en el contenedor.
+- [ ] `globals.css` sigue en 3461 líneas en un archivo.
+
+## Hecho 2026-11-01 (tarde) — addons, VOD reproducible y evaluación de Vercel
+Docker levantado. Verificación: typecheck + lint + 181 tests + build, y todo probado contra el contenedor en :3001.
+
+### Estado real de los addons (medido, no supuesto)
+- Diagnóstico nuevo en `/api/admin/addons/diagnostics`: **11 addons — 6 sirviendo, 5 necesitan configuración, 0 caídos.**
+- `addons.ts`: se lee `behaviorHints.configurationRequired`, que la app ignoraba. Antes registraba addons con manifest 200 que devolvían 404 en cada recurso, y el panel los contaba como sanos.
+- Subtítulos medidos uno por uno para `tt0111161`: **OpenSubtitles v3 = 200 con 37 pistas (3 ES)**. OpenSubtitles PRO = 500. SubSource, SubDL, Community Subtitles y SubSense = 404, los cuatro con `configurationRequired: true` (necesitan tu cuenta).
+- Los que necesitan config ya no se consultan (solo gastaban timeout) y se muestran con link a su `/configure`.
+
+### Torrentio y el VOD: bloqueo que no es de código
+- **Torrentio: 100 streams para una película, los 100 `infoHash`, cero URLs HTTP.**
+- **AIOStreams propio: 522 streams, los 522 `infoHash`, cero URLs HTTP.**
+- Un `<video>` solo reproduce HTTP. Para abrir esas fuentes hace falta un servicio debrid (TorBox / Real-Debrid / AllDebrid / Premiumize) configurado en el addon. Es una suscripción paga; no se puede resolver con código.
+- La UI dejó de decir "sin fuentes" y ahora explica el motivo real, con el conteo de fuentes P2P.
+- `FUBOL_OPEN_FILMS=1` por defecto: es la única vía de video que reproduce sin credencial paga. Verificado end-to-end: 1 fuente MP4 + **70 pistas de subtítulos (19 ES)**.
+- Sync de subtítulos validado: control contra sí misma offset 0 ms / score 1.0 / confianza 0.953; ES vs EN detecta −19.2 s real.
+
+### Performance
+- Home de 10.7 s a **0.35 s**: `getHomeRows` con stale-while-revalidate (fresco 5 min, stale 6 h, un solo refresh en background) más calentamiento en `instrumentation.ts` al arrancar (146 ms en el log). El resto de las páginas < 0.19 s.
+
+### Vercel: `audit/23_VERCEL_FEASIBILITY.md`
+- **Viable en ~80%, pierde lo prioritario.** El relay de ffmpeg (`relay.ts`) escribe segmentos y los lee en requests posteriores: en serverless cada invocación está aislada, así que no hay dónde vivir el pipeline. Se caen `AR · ESPN Premium`, `AR · DeporTV` y `AR · Fox Sports`.
+- También habría que migrar SQLite (9 call sites → Turso), pasar secretos a env y quitar `output: "standalone"`.
+- **Recomendación: host de contenedores always-on (Fly.io) en vez de Vercel.** La app ya está containerizada; es configuración, no reescritura, y conserva el 100% de las funciones.
+
+### Pendiente (decisiones del usuario)
+- [ ] **Clave debrid** si se quieren películas desde Torrentio/AIOStreams. Sin eso el VOD solo tiene Internet Archive.
+- [ ] Manifests personales de los 4-5 addons de subtítulos que piden cuenta (tienen link a su `/configure` en el panel).
+- [ ] Elegir destino del deploy: Fly.io (todo funciona) o Vercel (sin canales argentinos).
+- [ ] El delay absoluto contra el estadio sigue sin medirse — ver `audit/22_DELAY_MEASUREMENT.md` sección 6.

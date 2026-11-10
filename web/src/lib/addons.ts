@@ -1,4 +1,4 @@
-import { cacheGet, cacheSet } from "./db";
+import { cacheGet, cacheSet } from "./cache";
 import { fetchJson, UpstreamError } from "./http";
 import { sanitizeUrl, shortHash } from "./crypto";
 
@@ -25,6 +25,36 @@ export interface AddonManifest {
   resources?: (string | AddonResource)[];
   catalogs?: AddonCatalog[];
   idPrefixes?: string[];
+  behaviorHints?: {
+    /** The addon refuses to serve resources until the user configures it. */
+    configurationRequired?: boolean;
+    configurable?: boolean;
+  };
+}
+
+/**
+ * True when the addon's own manifest says it cannot serve anything yet. Five of
+ * the six registered subtitle providers declare this: their base URL answers
+ * `manifest.json` with HTTP 200 and every `subtitles/...` request with 404,
+ * because a working install needs a per-user manifest from their configure
+ * page. Treating a 200 manifest as "the addon works" is what made them look
+ * healthy while returning nothing.
+ */
+export function needsConfiguration(manifest: AddonManifest): boolean {
+  return manifest.behaviorHints?.configurationRequired === true;
+}
+
+/** The page where the user obtains their own configured manifest URL. */
+export function configureUrlFor(manifestUrl: string): string | null {
+  try {
+    const url = new URL(manifestUrl);
+    url.pathname = `${url.pathname.replace(/\/manifest\.json$/i, "").replace(/\/+$/, "")}/configure`;
+    url.search = "";
+    url.hash = "";
+    return url.toString();
+  } catch {
+    return null;
+  }
 }
 
 export interface AddonMetaPreview {
@@ -200,16 +230,27 @@ export async function getMeta(addon: AddonRef, type: string, id: string): Promis
   return data.meta;
 }
 
-export async function getStreams(addon: AddonRef, type: string, id: string): Promise<RawAddonStream[]> {
+export async function getStreams(
+  addon: AddonRef,
+  type: string,
+  id: string,
+  options: { fresh?: boolean } = {},
+): Promise<RawAddonStream[]> {
   const cacheKey = `addon:streams:${addon.id}:${shortHash(addon.url, 16)}:${type}:${id}`;
-  const cached = cacheGet<RawAddonStream[]>(cacheKey);
+  // `fresh` skips the cache: providers that bind a stream token to the caller's
+  // IP hand out a token that only works from the address that asked for it, so
+  // a cached URL is dead as soon as the request comes from another instance.
+  const cached = options.fresh ? undefined : cacheGet<RawAddonStream[]>(cacheKey);
   if (cached) return usableAddonStreams(cached);
   const path = `stream/${encodeURIComponent(type)}/${encodeURIComponent(id)}.json`;
   const { data } = await fetchJson<{ streams?: RawAddonStream[] }>(endpoint(addon.url, path), {
     timeoutMs: 20000,
   });
   const streams = Array.isArray(data.streams) ? data.streams : [];
-  cacheSet(cacheKey, streams, 2 * 60_000);
+  // A fresh resolution is not cached: the URL it returns only works for the
+  // address that asked for it, and a cached copy would be replayed by another
+  // instance that cannot use it.
+  if (!options.fresh) cacheSet(cacheKey, streams, 2 * 60_000);
   return usableAddonStreams(streams);
 }
 

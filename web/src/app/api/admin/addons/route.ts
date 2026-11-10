@@ -8,7 +8,7 @@ const KINDS: AddonKind[] = ["vod", "subs", "meta", "live"];
 
 export const GET = route("admin_addons", async () => {
   await requireAdmin();
-  return json({ addons: listAddonRows(undefined, true) });
+  return json({ addons: await listAddonRows(undefined, true) });
 });
 
 export const POST = route("admin_addons_create", async (request) => {
@@ -26,6 +26,6 @@ export const PATCH = route("admin_addons_toggle", async (request) => {
   if (!body.id || typeof body.enabled !== "boolean") {
     return json({ error: "Faltan datos" }, { status: 400 });
   }
-  toggleAddon(body.id, body.enabled);
+  await toggleAddon(body.id, body.enabled);
   return json({ ok: true });
 });
