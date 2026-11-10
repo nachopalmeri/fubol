@@ -6,6 +6,7 @@ import { IconAlert } from "@/components/icons";
 import { requirePageSession } from "@/lib/auth";
 import { withTimeout } from "@/lib/http";
 import { getVodMeta } from "@/lib/vod/service";
+import { listProgress } from "@/lib/state/progress";
 
 export const dynamic = "force-dynamic";
 
@@ -20,6 +21,10 @@ export default async function MoviePage({ params }: { params: Promise<{ id: stri
   const { id } = await params;
   const meta = await withTimeout(getVodMeta("movie", id), 15000, "metadata").catch(() => null);
   const name = meta?.name ?? "Película sin metadata";
+  // Where the family stopped, wherever they stopped it.
+  const scope = session.role === "admin" ? "admin" : session.code;
+  const resumeFrom =
+    (await listProgress(scope)).find((item) => item.type === "movie" && item.id === id)?.position ?? 0;
   const credits = [
     meta?.director?.length ? `Dirección: ${meta.director.join(", ")}` : null,
     meta?.cast?.length ? `Reparto: ${meta.cast.slice(0, 5).join(", ")}` : null,
@@ -71,6 +76,7 @@ export default async function MoviePage({ params }: { params: Promise<{ id: stri
           poster={meta?.poster}
           subtitle={[meta?.year ?? meta?.releaseInfo, meta?.runtime].filter(Boolean).join(" · ") || undefined}
           storageKey={`movie:${id}`}
+          resumeFrom={resumeFrom}
           isAdmin={session.role === "admin"}
         />
       </div>

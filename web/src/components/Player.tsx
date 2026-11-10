@@ -59,6 +59,10 @@ interface Props {
   autoPlay?: boolean;
   onEnded?: () => void;
   onSourceChange?: (source: PlayerSource) => void;
+  /** Position report, so the app can remember where this viewer stopped. */
+  onProgress?: (position: number, duration: number) => void;
+  /** Where the family left off, when the page was opened from that list. */
+  resumeFrom?: number;
 }
 
 type Status = "loading" | "playing" | "paused" | "error" | "switching";
@@ -93,6 +97,8 @@ export default function Player({
   autoPlay = false,
   onEnded,
   onSourceChange,
+  onProgress,
+  resumeFrom = 0,
 }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -113,6 +119,8 @@ export default function Player({
   onEndedRef.current = onEnded;
   const onSourceChangeRef = useRef(onSourceChange);
   onSourceChangeRef.current = onSourceChange;
+  const onProgressRef = useRef(onProgress);
+  onProgressRef.current = onProgress;
 
   const [sourceIndex, setSourceIndex] = useState(0);
   const [retryNonce, setRetryNonce] = useState(0);
@@ -256,7 +264,10 @@ export default function Player({
     setLatency(null);
     setPanel(null);
 
-    const resumeAt = mode === "vod" ? readStored(`fubol:resume:${storageKey}`) : 0;
+    // The browser remembers where this device stopped; the shared history
+    // remembers where the family stopped. The newer of the two wins.
+    const stored = mode === "vod" ? readStored(`fubol:resume:${storageKey}`) : 0;
+    const resumeAt = Math.max(stored, mode === "vod" ? resumeFrom ?? 0 : 0);
 
     const play = () => {
       if (!autoPlay) {
@@ -581,6 +592,11 @@ export default function Player({
         }
       } catch {
         // ignore
+      }
+      // The shared history is what makes "seguir viendo" work on another
+      // device, so it is reported less often than the local resume key.
+      if (onProgressRef.current && Math.floor(video.currentTime) % 15 === 0) {
+        onProgressRef.current(video.currentTime, video.duration || 0);
       }
     }
   };

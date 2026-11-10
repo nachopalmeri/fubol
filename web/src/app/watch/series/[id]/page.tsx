@@ -5,6 +5,7 @@ import { IconArrowRight } from "@/components/icons";
 import { requirePageSession } from "@/lib/auth";
 import { withTimeout } from "@/lib/http";
 import { getVodMeta } from "@/lib/vod/service";
+import { listProgress } from "@/lib/state/progress";
 import type { AddonMeta } from "@/lib/addons";
 
 export const dynamic = "force-dynamic";
@@ -47,6 +48,12 @@ export default async function SeriesWatchPage({
   const next = index >= 0 && index < episodes.length - 1 ? episodes[index + 1] : undefined;
 
   const name = meta?.name ?? "Serie";
+  // Where this episode was left, on any device.
+  const scope = session.role === "admin" ? "admin" : session.code;
+  const resumeFrom =
+    (await listProgress(scope)).find(
+      (item) => item.type === "series" && item.id === id && (item.episode ?? "") === streamId,
+    )?.position ?? 0;
   const subtitle = selected
     ? `${episodeCode(selected)}${selected.title ? ` · ${selected.title}` : ""}`
     : requested
@@ -90,6 +97,8 @@ export default async function SeriesWatchPage({
         poster={meta?.poster}
         subtitle={subtitle}
         storageKey={`series:${streamId}`}
+        resumeFrom={resumeFrom}
+        seriesId={id}
         isAdmin={session.role === "admin"}
       />
 

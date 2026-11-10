@@ -1200,6 +1200,15 @@ p {
   letter-spacing: 0.04em;
 }
 
+.poster-progress {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 3px;
+  background: var(--red, #ff3b30);
+  box-shadow: 0 0 8px rgba(255, 59, 48, 0.6);
+}
+
 .poster-copy {
   display: flex;
   flex-direction: column;

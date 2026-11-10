@@ -16,6 +16,7 @@ import {
 } from "@/lib/live/fixtures";
 import { getAllChannels } from "@/lib/live/sources";
 import { getHomeRows } from "@/lib/vod/service";
+import { listProgress } from "@/lib/state/progress";
 import { withTimeout } from "@/lib/http";
 import { IconArrowRight, IconFilm, IconPlay, IconSettings } from "@/components/icons";
 
@@ -43,6 +44,9 @@ export default async function HomePage() {
   // The hero should open something that plays; a torrent-only title is the
   // fallback, and it says so instead of promising a stream.
   const featured = metas.find((meta) => meta.playableId) ?? metas[0];
+  // Where this viewer stopped, on any device.
+  const scope = session.role === "admin" ? "admin" : session.code;
+  const continueWatching = (await listProgress(scope)).slice(0, 14);
   const today = [...liveFixtures(fixtures), ...todaysFixtures(fixtures)]
     .filter((fixture, index, list) => list.findIndex((item) => item.id === fixture.id) === index)
     .slice(0, 5);
@@ -90,6 +94,47 @@ export default async function HomePage() {
             </div>
           </section>
         ) : null}
+
+        {continueWatching.length > 0 && (
+          <section className="row-section" aria-label="Seguir viendo">
+            <div className="section-head">
+              <div>
+                <h2>Seguir viendo</h2>
+                <p>Donde lo dejaste. Se guarda en el servidor, así que sigue igual en el otro aparato.</p>
+              </div>
+            </div>
+            <div className="poster-row">
+              {continueWatching.map((item) => {
+                const href =
+                  item.type === "series"
+                    ? `/watch/series/${encodeURIComponent(item.id)}${item.episode ? `?ep=${encodeURIComponent(item.episode)}` : ""}`
+                    : `/movie/${encodeURIComponent(item.id)}`;
+                const percent = item.duration > 0 ? Math.min(100, Math.round((item.position / item.duration) * 100)) : 0;
+                return (
+                  <Link key={`${item.type}:${item.id}:${item.episode ?? ""}`} href={href} className="poster-card">
+                    <div className="poster-art">
+                      {item.poster ? (
+                        <img src={item.poster} alt="" loading="lazy" referrerPolicy="no-referrer" />
+                      ) : (
+                        <span className="poster-fallback" aria-hidden="true">
+                          <span>{item.type === "series" ? "SERIE" : "PELÍCULA"}</span>
+                          {item.name}
+                        </span>
+                      )}
+                      <span className="poster-progress" style={{ width: `${percent}%` }} />
+                    </div>
+                    <div className="poster-copy">
+                      <strong>{item.name}</strong>
+                      <span>
+                        {Math.floor(item.position / 60)} min · {percent}% visto
+                      </span>
+                    </div>
+                  </Link>
+                );
+              })}
+            </div>
+          </section>
+        )}
 
         {featured ? (
           <section className="home-feature" aria-labelledby="feature-title">

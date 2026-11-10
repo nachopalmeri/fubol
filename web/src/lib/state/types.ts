@@ -45,6 +45,19 @@ export interface AddonRecord {
   createdAt: number;
 }
 
+export interface ProgressRecord {
+  /** Who watched it: the admin, or the code of a family link. */
+  scope: string;
+  type: "movie" | "series" | "live";
+  id: string;
+  episode?: string;
+  name: string;
+  poster?: string;
+  position: number;
+  duration: number;
+  updatedAt: number;
+}
+
 export interface StateDoc {
   version: 1;
   nextLinkId: number;
@@ -52,10 +65,12 @@ export interface StateDoc {
   sources: SourceRecord[];
   addons: AddonRecord[];
   settings: Record<string, string>;
+  /** Where each viewer left off, so "seguir viendo" works across devices. */
+  progress: ProgressRecord[];
 }
 
 export function emptyState(): StateDoc {
-  return { version: 1, nextLinkId: 1, links: [], sources: [], addons: [], settings: {} };
+  return { version: 1, nextLinkId: 1, links: [], sources: [], addons: [], settings: {}, progress: [] };
 }
 
 /** Defensive read: a hand-edited or half-written document must not crash pages. */
@@ -73,6 +88,16 @@ export function normalizeState(input: unknown): StateDoc {
         )
       : {};
   const maxId = links.reduce((max, link) => Math.max(max, Number(link.id) || 0), 0);
+  const progress = Array.isArray(raw.progress)
+    ? raw.progress.filter(
+        (item) =>
+          item &&
+          typeof item.scope === "string" &&
+          typeof item.id === "string" &&
+          typeof item.name === "string" &&
+          typeof item.position === "number",
+      )
+    : [];
   return {
     version: 1,
     nextLinkId: Math.max(Number(raw.nextLinkId) || 1, maxId + 1),
@@ -80,5 +105,6 @@ export function normalizeState(input: unknown): StateDoc {
     sources: sources as SourceRecord[],
     addons: addons as AddonRecord[],
     settings,
+    progress: progress as ProgressRecord[],
   };
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Player, { type PlayerSource, type PlayerSubtitle } from "./Player";
 import { IconAlert, IconArrowRight, IconRefresh, IconSettings } from "./icons";
 
@@ -32,6 +32,8 @@ export default function VodWatch({
   subtitle,
   storageKey,
   isAdmin = false,
+  resumeFrom = 0,
+  seriesId,
 }: {
   type: "movie" | "series";
   id: string;
@@ -40,6 +42,9 @@ export default function VodWatch({
   subtitle?: string;
   storageKey: string;
   isAdmin?: boolean;
+  resumeFrom?: number;
+  /** Series id, when `id` is the episode being watched. */
+  seriesId?: string;
 }) {
   const [data, setData] = useState<VodResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -175,6 +180,25 @@ export default function VodWatch({
 
   const best = data.sources[0];
 
+  // The shared history is what lets the family resume on another device.
+  const reportProgress = useCallback(
+    (position: number, duration: number) => {
+      // For a series the progress belongs to the episode inside the series, so
+      // the rail can show "S02E03 · 40%".
+      const payload =
+        type === "series"
+          ? { type, id: seriesId ?? id, episode: id, name: title, poster, position, duration }
+          : { type, id, name: title, poster, position, duration };
+      void fetch("/api/progress", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload),
+        keepalive: true,
+      }).catch(() => undefined);
+    },
+    [type, id, seriesId, title, poster],
+  );
+
   return (
     <div className="watch">
       <Player
@@ -185,6 +209,8 @@ export default function VodWatch({
         poster={poster}
         storageKey={storageKey}
         subtitles={subtitles}
+        onProgress={reportProgress}
+        resumeFrom={resumeFrom}
         autoPlay
       />
 
