@@ -8,7 +8,11 @@ Actualizado: 2026-11-10
 - [x] Sync por referencia desde la UI: "Offset 0.0 s · confianza 95%" entre la pista ES y la EN de OpenSubtitles v3.
 - [x] Verificado en el navegador: *The Shawshank Redemption* reproduciéndose desde Torrentio (vía el resolver), con la pista ES de OpenSubtitles v3 renderizada en pantalla (1.692 cues, "SUEÑO DE FUGA") y el video reanudado desde el progreso guardado (2.423 s).
 - [x] El único addon de subtítulos que responde sin cuenta es **OpenSubtitles v3** (37 pistas: 3 ES, 3 EN, 17 idiomas). Los otros cinco (SubSource, SubDL, Community Subtitles, SubSense, OpenSubtitles PRO) están instalados pero devuelven 404 hasta que uno se registra; se probaron 16 candidatos más del directorio y ninguno responde sin cuenta.
-- [ ] Pendiente: los cinco manifests con sesión de los addons de subtítulos, que Gandalf está creando con su propio email (quedan en `.secrets/subtitle-manifests.json`).
+- [x] **Los manifests con sesión** quedaron escritos por Gandalf en `.secrets/subtitle-manifests.json` y registrados en la app: **SubDL** (63 pistas), **SubSense** (10) y **Stremio Community Subtitles** (1) responden con pistas; OpenSubtitles PRO responde con manifest ok pero sin pistas para este título.
+- [x] Efecto medido en `tt0111161`: las pistas pasaron de 37 (3 ES) a **80 (19 ES, 61 EN)** con cuatro addons respondiendo.
+- [x] Episodio de serie (Breaking Bad 1x1): fuentes de **dos addons distintos** (Comet 2 + Torrentio 6) y 80 pistas (27 en español) de OpenSubtitles v3, SubDL, SubSense y Community Subtitles.
+- [ ] SubSource: Gandalf no pudo crearla y quedó vacía; sigue con el manifest público (pide configuración) hasta que se registre a mano.
+- [ ] OpenSubtitles PRO: manifest configurado pero sin pistas para `tt0111161`; revisar si el addon requiere otro identificador.
 
 ## P2P reproducible sin debrid (2026-11-10, noche)
 - [x] **Camino gratis montado y verificado**: `stremio/server:v4.22.5` (el servidor de streaming de Stremio, el mismo mecanismo de Stremio y Nuvio) levanta el `infoHash` de los addons y lo re-sirve por HTTP. Con un túnel de Cloudflare sin cuenta queda alcanzable desde Vercel.
