@@ -78,7 +78,14 @@ export function signRelayUrl(
   return `/api/relay/${token}/index.m3u8`;
 }
 
-export function signSubtitleUrl(url: string, ttlMs = 12 * 3600_000): string {
-  const token = signToken({ u: url, k: "vod" }, ttlMs);
+export function signSubtitleUrl(
+  url: string,
+  ttlMs = 12 * 3600_000,
+  extra: { titleId?: string } = {},
+): string {
+  // The title reference travels with the token so the server can cache the
+  // alignment it computes: the same film has to sync the same way on every
+  // device of the house.
+  const token = signToken({ u: url, k: "vod", ...(extra.titleId ? { t: extra.titleId } : {}) }, ttlMs);
   return `/api/subtitles/proxy?t=${encodeURIComponent(token)}`;
 }

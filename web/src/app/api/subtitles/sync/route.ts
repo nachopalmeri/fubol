@@ -3,6 +3,7 @@ import { verifyStreamToken } from "@/lib/stream-token";
 import { fetchSubtitleAsVtt, audioSync } from "@/lib/subs/service";
 import { estimateOffset } from "@/lib/subs/sync";
 import { parseCues } from "@/lib/subs/format";
+import { getSync, setSync } from "@/lib/state/sync";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -31,7 +32,28 @@ export const POST = route("subtitle_sync", async (request) => {
     if (streamPayload.k !== "vod" || (subtitlePayload.k && subtitlePayload.k !== "vod")) {
       return json({ error: "Este token no corresponde a una película o serie" }, { status: 403 });
     }
+    // Already measured? The alignment belongs to the copy, not to the device:
+    // answering from the shared state saves every other screen the wait.
+    const titleId = typeof subtitlePayload.t === "string" ? subtitlePayload.t : null;
+    if (titleId) {
+      const known = await getSync(titleId, streamPayload.s ?? "unknown").catch(() => null);
+      if (known) {
+        return json({
+          offsetMs: known.offsetMs,
+          confidence: known.confidence,
+          source: known.source,
+          cached: true,
+        });
+      }
+    }
     const result = await audioSync(subtitlePayload.u, streamPayload.u);
+    if (titleId && streamPayload.s) {
+      await setSync(titleId, streamPayload.s, {
+        offsetMs: result.offsetMs,
+        confidence: result.confidence,
+        source: "audio",
+      }).catch(() => undefined);
+    }
     return json(result);
   }
 

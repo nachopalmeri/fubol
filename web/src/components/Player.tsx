@@ -39,6 +39,9 @@ export interface PlayerSource {
   height?: number | null;
   /** Same-upload caption assets, not a claim of perfect human-verified alignment. */
   matchedSubtitleIds?: string[];
+  /** Alignment the server already measured for this title and source. */
+  syncOffsetMs?: number | null;
+  syncConfidence?: number | null;
 }
 
 export interface PlayerSubtitle {
@@ -121,6 +124,7 @@ export default function Player({
   onSourceChangeRef.current = onSourceChange;
   const onProgressRef = useRef(onProgress);
   onProgressRef.current = onProgress;
+  const runAutoSyncRef = useRef<() => void>(() => undefined);
 
   const [sourceIndex, setSourceIndex] = useState(0);
   const [retryNonce, setRetryNonce] = useState(0);
@@ -478,6 +482,61 @@ export default function Player({
     return () => clearInterval(timer);
   }, [mode, status]);
 
+  /**
+   * The alignment that matches the film itself, not just another track.
+   *
+   * Comparing two tracks only says they agree with each other; the shift
+   * against the actual audio is what the viewer notices. That measurement
+   * takes minutes, so it runs once in the background and the server keeps it:
+   * every other device of the house gets the offset straight away.
+   */
+  const audioSyncRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!activeSubtitle || !source) return;
+    const key = `${source.id}:${activeSubtitle.id}`;
+    if (audioSyncRef.current === key) return;
+    // The server already knows the alignment of this copy: nothing to measure.
+    if (typeof source.syncOffsetMs === "number") return;
+    const flag = `fubol:audio-sync:${storageKey}:${activeSubtitle.id}`;
+    try {
+      // The alignment against the audio was already measured on this device.
+      if (localStorage.getItem(flag) !== null) return;
+    } catch {
+      // storage may be disabled
+    }
+    const tokenOf = (url: string) => {
+      try {
+        return new URL(url, window.location.origin).searchParams.get("t");
+      } catch {
+        return null;
+      }
+    };
+    const target = tokenOf(activeSubtitle.url);
+    const stream = tokenOf(source.url);
+    if (!target || !stream) return;
+    audioSyncRef.current = key;
+    void fetch("/api/subtitles/sync", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ mode: "audio", target, stream }),
+    })
+      .then(async (response) => {
+        if (!response.ok) return;
+        const data = (await response.json()) as { offsetMs?: number; confidence?: number };
+        if (typeof data.offsetMs !== "number") return;
+        try {
+          localStorage.setItem(flag, String(data.offsetMs));
+        } catch {
+          // storage may be disabled
+        }
+        setOffsetMs(data.offsetMs);
+        setSyncMsg(
+          `Alineado con el audio: ${(data.offsetMs / 1000).toFixed(1)} s · confianza ${Math.round((data.confidence ?? 0) * 100)}%`,
+        );
+      })
+      .catch(() => undefined);
+  }, [activeSubtitle, source, storageKey]);
+
   /* ------------------------------ subtitles ----------------------------- */
   useEffect(() => {
     if (subTouchedRef.current) return;
@@ -488,15 +547,48 @@ export default function Player({
   }, [subtitles, activeSub, source?.id, source?.matchedSubtitleIds]);
 
   useEffect(() => {
-    if (activeSub) {
-      try {
-        const stored = Number(localStorage.getItem(`fubol:offset:${storageKey}:${activeSub}`));
-        setOffsetMs(Number.isFinite(stored) ? stored : 0);
-      } catch {
-        setOffsetMs(0);
+    if (!activeSub) return;
+    try {
+      const stored = Number(localStorage.getItem(`fubol:offset:${storageKey}:${activeSub}`));
+      if (Number.isFinite(stored) && localStorage.getItem(`fubol:offset:${storageKey}:${activeSub}`) !== null) {
+        setOffsetMs(stored);
+        return;
       }
+    } catch {
+      // storage may be disabled
     }
-  }, [activeSub, storageKey]);
+    // Nothing measured on this device: the server may already know the
+    // alignment of this copy, because it was measured for another screen.
+    if (typeof source?.syncOffsetMs === "number") {
+      setOffsetMs(source.syncOffsetMs);
+      return;
+    }
+    setOffsetMs(0);
+  }, [activeSub, storageKey, source?.id, source?.syncOffsetMs]);
+
+  /**
+   * The subtitles have to land right without anyone pressing anything.
+   *
+   * When a track is picked and neither the device nor the server knows the
+   * alignment, the two tracks are compared once: it costs a second, it needs
+   * no sidecar, and it is what stops the family from watching the dialogue
+   * arrive after the line was said.
+   */
+  const autoSyncedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!activeSubtitle || subtitles.length < 2) return;
+    if (autoSyncedRef.current === activeSubtitle.id) return;
+    let known = false;
+    try {
+      known = localStorage.getItem(`fubol:offset:${storageKey}:${activeSubtitle.id}`) !== null;
+    } catch {
+      known = false;
+    }
+    if (known) return;
+    if (typeof source?.syncOffsetMs === "number") return;
+    autoSyncedRef.current = activeSubtitle.id;
+    void runAutoSyncRef.current();
+  }, [activeSubtitle, subtitles, storageKey, source?.id, source?.syncOffsetMs]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -759,6 +851,10 @@ export default function Player({
     } finally {
       setSyncBusy(false);
     }
+  };
+
+  runAutoSyncRef.current = () => {
+    void runAutoSync();
   };
 
   const onKeyDown = (event: ReactKeyboardEvent) => {

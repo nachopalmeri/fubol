@@ -58,6 +58,14 @@ export interface ProgressRecord {
   updatedAt: number;
 }
 
+export interface SyncRecord {
+  offsetMs: number;
+  confidence: number;
+  /** When the alignment was measured; a stale one can be recomputed. */
+  at: number;
+  source: "audio" | "reference";
+}
+
 export interface StateDoc {
   version: 1;
   nextLinkId: number;
@@ -67,10 +75,25 @@ export interface StateDoc {
   settings: Record<string, string>;
   /** Where each viewer left off, so "seguir viendo" works across devices. */
   progress: ProgressRecord[];
+  /**
+   * Subtitle alignment per title and source. The alignment is a property of
+   * the copy, not of the device: computing it once and sharing it is what
+   * makes the subtitles land right on every screen of the house.
+   */
+  sync: Record<string, SyncRecord>;
 }
 
 export function emptyState(): StateDoc {
-  return { version: 1, nextLinkId: 1, links: [], sources: [], addons: [], settings: {}, progress: [] };
+  return {
+    version: 1,
+    nextLinkId: 1,
+    links: [],
+    sources: [],
+    addons: [],
+    settings: {},
+    progress: [],
+    sync: {},
+  };
 }
 
 /** Defensive read: a hand-edited or half-written document must not crash pages. */
@@ -98,6 +121,17 @@ export function normalizeState(input: unknown): StateDoc {
           typeof item.position === "number",
       )
     : [];
+  const sync =
+    raw.sync && typeof raw.sync === "object" && !Array.isArray(raw.sync)
+      ? Object.fromEntries(
+          Object.entries(raw.sync).filter(
+            (entry): entry is [string, SyncRecord] =>
+              entry[1] &&
+              typeof entry[1] === "object" &&
+              typeof (entry[1] as SyncRecord).offsetMs === "number",
+          ),
+        )
+      : {};
   return {
     version: 1,
     nextLinkId: Math.max(Number(raw.nextLinkId) || 1, maxId + 1),
@@ -106,5 +140,6 @@ export function normalizeState(input: unknown): StateDoc {
     addons: addons as AddonRecord[],
     settings,
     progress: progress as ProgressRecord[],
+    sync,
   };
 }

@@ -190,6 +190,8 @@ export default function VodWatch({
     score: source.score,
     height: source.height,
     matchedSubtitleIds: source.matchedSubtitleIds,
+    syncOffsetMs: source.syncOffsetMs ?? null,
+    syncConfidence: source.syncConfidence ?? null,
   }));
 
   const subtitles: PlayerSubtitle[] = data.subtitles.map((track) => ({

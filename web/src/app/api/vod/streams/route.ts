@@ -2,6 +2,7 @@ import { json, requireSession, route } from "@/lib/api";
 import { getPlayableVodStreams } from "@/lib/vod/service";
 import { listSubtitles } from "@/lib/subs/service";
 import { signStreamUrl, signSubtitleUrl, sanitizeHeaders } from "@/lib/stream-token";
+import { getSync } from "@/lib/state/sync";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -17,6 +18,16 @@ export const GET = route("vod_streams", async (request) => {
     getPlayableVodStreams(type, id),
     listSubtitles(type, id).catch(() => []),
   ]);
+
+  // The alignment each source was measured with, if it was measured: the same
+  // copy has to land the same way on every screen of the house.
+  const alignments = await Promise.all(
+    streams.sources.map(async (source) => ({
+      id: source.id,
+      sync: await getSync(id, source.id).catch(() => null),
+    })),
+  );
+  const syncBySource = new Map(alignments.map((entry) => [entry.id, entry.sync]));
 
   return json({
     type,
@@ -39,9 +50,15 @@ export const GET = route("vod_streams", async (request) => {
       score: source.score,
       kind: streams.kinds[source.id],
       matchedSubtitleIds: source.addonId === "open-films" ? subtitles.filter((track) => track.addonId === "open-films").map((track) => track.id) : [],
+      /** Alignment already measured for this title and source. */
+      syncOffsetMs: syncBySource.get(source.id)?.offsetMs ?? null,
+      syncConfidence: syncBySource.get(source.id)?.confidence ?? null,
       url: signStreamUrl(source.url, {
         headers: sanitizeHeaders(source.headers),
         kind: "vod",
+        // The source travels with the token so an alignment measured for it
+        // can be found again by the next device.
+        sourceId: source.id,
       }),
     })),
     subtitles: subtitles.map((subtitle) => ({
@@ -49,7 +66,7 @@ export const GET = route("vod_streams", async (request) => {
       label: `${subtitle.langLabel} · ${subtitle.addonName}${subtitle.forced ? " (forzados)" : ""}`,
       lang: subtitle.lang,
       forced: subtitle.forced,
-      url: signSubtitleUrl(subtitle.url),
+      url: signSubtitleUrl(subtitle.url, undefined, { titleId: id }),
     })),
     addonsTried: streams.addonsTried,
     // Why nothing is playable, when nothing is. P2P-only means the providers
