@@ -74,7 +74,14 @@ function republish() {
     const child = spawn(
       process.execPath,
       [path.join(ROOT, "scripts", "torrent-resolver.mjs"), "--admin", ADMIN_URL, "--detach"],
-      { cwd: ROOT, env: process.env, stdio: "inherit" },
+      {
+        cwd: ROOT,
+        // The child has to be able to publish the new address: without the
+        // password it would sit waiting for it and the resolver would stay
+        // pointed at a tunnel that no longer exists.
+        env: { ...process.env, FUBOL_ADMIN_PASSWORD: PASSWORD },
+        stdio: "inherit",
+      },
     );
     child.on("exit", (code) => resolve(code ?? 1));
   });
