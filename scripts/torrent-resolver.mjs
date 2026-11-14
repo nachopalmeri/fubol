@@ -123,15 +123,29 @@ async function startTunnel(detach) {
   });
   const url = await new Promise((resolve, reject) => {
     let buffer = "";
+    let settled = false;
+    const finish = (fn) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      fn();
+    };
     const onData = (chunk) => {
       buffer += chunk.toString();
       const match = /https:\/\/[a-z0-9-]+\.trycloudflare\.com/.exec(buffer);
-      if (match) resolve(match[0]);
+      if (match) finish(() => resolve(match[0]));
     };
+    // Cloudflare a veces tarda más de un minuto en asignar el nombre del
+    // túnel cuando hay congestión. Dos minutos evita que el acceso de un clic
+    // falle justo cuando la familia lo necesita.
+    const timer = setTimeout(
+      () => finish(() => reject(new Error("el túnel no dio una URL a tiempo"))),
+      120000,
+    );
     child.stderr.on("data", onData);
     child.stdout.on("data", onData);
-    child.on("exit", (code) => reject(new Error(`el túnel terminó con código ${code}`)));
-    setTimeout(() => reject(new Error("el túnel no dio una URL a tiempo")), 60000);
+    child.on("error", (error) => finish(() => reject(error)));
+    child.on("exit", (code) => finish(() => reject(new Error(`el túnel terminó con código ${code}`))));
   });
   if (detach) {
     // The tunnel has to outlive this script: a quick tunnel without a process
