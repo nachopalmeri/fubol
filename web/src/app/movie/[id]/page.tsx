@@ -73,7 +73,7 @@ export default async function MoviePage({ params }: { params: Promise<{ id: stri
           type="movie"
           id={id}
           title={name}
-          poster={meta?.poster}
+          poster={meta?.background ?? meta?.poster}
           subtitle={[meta?.year ?? meta?.releaseInfo, meta?.runtime].filter(Boolean).join(" · ") || undefined}
           storageKey={`movie:${id}`}
           resumeFrom={resumeFrom}

@@ -1,9 +1,30 @@
 import type { Metadata, Viewport } from "next";
 import Link from "next/link";
+import { Inter, Playfair_Display } from "next/font/google";
 import PwaRegister from "@/components/PwaRegister";
 import TopBar from "@/components/TopBar";
 import { getSession } from "@/lib/auth";
 import "./globals.css";
+import "./design.css";
+
+/**
+ * Dos voces: la serif de editorial para los títulos (el cartel de la película)
+ * y la sans para todo lo que se lee rápido. Son fuentes del proyecto, no del
+ * sistema, porque el mismo título tiene que verse igual en el celular de la
+ * familia que en la tele.
+ */
+const display = Playfair_Display({
+  subsets: ["latin"],
+  weight: ["600", "700", "800"],
+  variable: "--font-display",
+  display: "swap",
+});
+
+const sans = Inter({
+  subsets: ["latin"],
+  variable: "--font-sans",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
   title: {
@@ -20,7 +41,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#07090a",
+  themeColor: "#07070a",
   colorScheme: "dark",
   width: "device-width",
   initialScale: 1,
@@ -33,7 +54,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const label = isAdmin ? "Admin" : session?.role === "link" ? session.label : "Invitado";
 
   return (
-    <html lang="es">
+    <html lang="es" className={`${display.variable} ${sans.variable}`}>
       <body>
         <a className="skip-link" href="#contenido">
           Saltar al contenido

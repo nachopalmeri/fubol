@@ -1,8 +1,10 @@
 import { Suspense } from "react";
 import Link from "next/link";
-import FixtureCard from "@/components/FixtureCard";
+import FixtureCard, { TeamBadge } from "@/components/FixtureCard";
+import HeroCarousel from "@/components/HeroCarousel";
 import KickoffCountdown from "@/components/KickoffCountdown";
 import PosterRow from "@/components/PosterRow";
+import Rail from "@/components/Rail";
 import SearchShortcut from "@/components/SearchShortcut";
 import { requirePageSession } from "@/lib/auth";
 import {
@@ -16,6 +18,7 @@ import {
 } from "@/lib/live/fixtures";
 import { getAllChannels } from "@/lib/live/sources";
 import { getHomeRows } from "@/lib/vod/service";
+import { heroItemsFrom } from "@/lib/vod/hero";
 import { listProgress } from "@/lib/state/progress";
 import { withTimeout } from "@/lib/http";
 import { IconArrowRight, IconFilm, IconPlay, IconSettings } from "@/components/icons";
@@ -41,17 +44,23 @@ export default async function HomePage() {
     channels,
   );
   const metas = rows.flatMap((row) => row.metas);
-  // The hero should open something that plays; a torrent-only title is the
-  // fallback, and it says so instead of promising a stream.
-  const featured = metas.find((meta) => meta.playableId) ?? metas[0];
-  // Where this viewer stopped, on any device.
+  // El hero muestra lo que se puede abrir; el catálogo entero vive abajo.
+  const heroItems = heroItemsFrom(
+    [...metas].sort((a, b) => Number(Boolean(b.playableId)) - Number(Boolean(a.playableId))),
+    6,
+  );
+  // Where this viewer stopped, on any device. A title opened and abandoned at
+  // second zero is not "continue watching"; neither is one already finished.
   const scope = session.role === "admin" ? "admin" : session.code;
-  const continueWatching = (await listProgress(scope)).slice(0, 14);
+  const continueWatching = (await listProgress(scope))
+    .filter((item) => item.position > 0)
+    .filter((item) => item.duration <= 0 || item.position / item.duration < 0.97)
+    .slice(0, 14);
   const today = [...liveFixtures(fixtures), ...todaysFixtures(fixtures)]
     .filter((fixture, index, list) => list.findIndex((item) => item.id === fixture.id) === index)
     .slice(0, 5);
   // The next match with a configured channel is what a family link is opened
-  // for, so it gets the hero instead of an empty welcome panel.
+  // for, so it gets a band of its own instead of an empty welcome panel.
   const nextMatch = today
     .map((fixture) => matchFixtureChannels(fixture, channels))
     .find((match) => match.channels.length > 0);
@@ -59,7 +68,50 @@ export default async function HomePage() {
   return (
     <>
       <SearchShortcut />
+      <HeroCarousel items={heroItems} />
       <main className="shell home-shell">
+        {continueWatching.length > 0 && (
+          <section className="row-section" aria-label="Seguir viendo">
+            <div className="section-head">
+              <div>
+                <h2>Seguir viendo</h2>
+                <p>Donde lo dejaste. Se guarda en el servidor, así que sigue igual en el otro aparato.</p>
+              </div>
+            </div>
+            <Rail label="Seguir viendo">
+              {continueWatching.map((item) => {
+                const href =
+                  item.type === "series"
+                    ? `/watch/series/${encodeURIComponent(item.id)}${item.episode ? `?ep=${encodeURIComponent(item.episode)}` : ""}`
+                    : `/movie/${encodeURIComponent(item.id)}`;
+                const percent = item.duration > 0 ? Math.min(100, Math.round((item.position / item.duration) * 100)) : 0;
+                return (
+                  <Link key={`${item.type}:${item.id}:${item.episode ?? ""}`} href={href} className="poster-card">
+                    <div className="poster-art">
+                      {item.poster ? (
+                        <img src={item.poster} alt="" loading="lazy" referrerPolicy="no-referrer" />
+                      ) : (
+                        <span className="poster-fallback" aria-hidden="true">
+                          <span>{item.type === "series" ? "SERIE" : "PELÍCULA"}</span>
+                          {item.name}
+                        </span>
+                      )}
+                      <span className="poster-play" aria-hidden="true"><IconPlay size={18} /></span>
+                      <span className="poster-progress" style={{ width: `${percent}%` }} />
+                    </div>
+                    <div className="poster-copy">
+                      <strong>{item.name}</strong>
+                      <span>
+                        {Math.floor(item.position / 60)} min · {percent}% visto
+                      </span>
+                    </div>
+                  </Link>
+                );
+              })}
+            </Rail>
+          </section>
+        )}
+
         {nextMatch ? (
           <section className="home-match" aria-labelledby="match-title">
             <div className="home-match-copy">
@@ -92,74 +144,21 @@ export default async function HomePage() {
                 </Link>
               </div>
             </div>
+            <div className="home-match-side">
+              <div className="home-match-badges" aria-hidden="true">
+                <TeamBadge name={nextMatch.fixture.home} size="lg" />
+                <span className="home-match-vs-label">vs</span>
+                <TeamBadge name={nextMatch.fixture.away} size="lg" />
+              </div>
+              <time dateTime={new Date(nextMatch.fixture.kickoff).toISOString()}>
+                <strong>{formatKickoffTime(nextMatch.fixture.kickoff)}</strong>
+                <span>hora argentina</span>
+              </time>
+            </div>
           </section>
         ) : null}
 
-        {continueWatching.length > 0 && (
-          <section className="row-section" aria-label="Seguir viendo">
-            <div className="section-head">
-              <div>
-                <h2>Seguir viendo</h2>
-                <p>Donde lo dejaste. Se guarda en el servidor, así que sigue igual en el otro aparato.</p>
-              </div>
-            </div>
-            <div className="poster-row">
-              {continueWatching.map((item) => {
-                const href =
-                  item.type === "series"
-                    ? `/watch/series/${encodeURIComponent(item.id)}${item.episode ? `?ep=${encodeURIComponent(item.episode)}` : ""}`
-                    : `/movie/${encodeURIComponent(item.id)}`;
-                const percent = item.duration > 0 ? Math.min(100, Math.round((item.position / item.duration) * 100)) : 0;
-                return (
-                  <Link key={`${item.type}:${item.id}:${item.episode ?? ""}`} href={href} className="poster-card">
-                    <div className="poster-art">
-                      {item.poster ? (
-                        <img src={item.poster} alt="" loading="lazy" referrerPolicy="no-referrer" />
-                      ) : (
-                        <span className="poster-fallback" aria-hidden="true">
-                          <span>{item.type === "series" ? "SERIE" : "PELÍCULA"}</span>
-                          {item.name}
-                        </span>
-                      )}
-                      <span className="poster-progress" style={{ width: `${percent}%` }} />
-                    </div>
-                    <div className="poster-copy">
-                      <strong>{item.name}</strong>
-                      <span>
-                        {Math.floor(item.position / 60)} min · {percent}% visto
-                      </span>
-                    </div>
-                  </Link>
-                );
-              })}
-            </div>
-          </section>
-        )}
-
-        {featured ? (
-          <section className="home-feature" aria-labelledby="feature-title">
-            {featured.background || featured.poster ? (
-              <img className="home-feature-art" src={featured.background || featured.poster} alt="" fetchPriority="high" />
-            ) : null}
-            <div className="home-feature-copy">
-              <span className="eyebrow">
-                {featured.playableId
-                  ? "Disponible para reproducir"
-                  : featured.p2p
-                    ? "Fuentes P2P · necesita un resolver"
-                    : "En tu biblioteca"}
-              </span>
-              <h1 id="feature-title">{featured.name}</h1>
-              <p>{featured.description || [featured.releaseInfo, featured.genres?.slice(0, 2).join(" · ")].filter(Boolean).join(" · ") || "En tu biblioteca"}</p>
-              <div className="home-feature-actions">
-                <Link className="btn btn-primary" href={featured.type === "series" && featured.playableId ? `/watch/series/${encodeURIComponent(featured.id)}?ep=${encodeURIComponent(featured.playableId)}` : `/${featured.type === "series" ? "series" : "movie"}/${encodeURIComponent(featured.id)}`}>
-                  Ver título <IconArrowRight size={16} />
-                </Link>
-                <Link className="btn btn-ghost" href="/buscar">Explorar catálogo</Link>
-              </div>
-            </div>
-          </section>
-        ) : (
+        {!heroItems.length ? (
           <section className="home-empty" aria-labelledby="home-title">
             <div className="home-empty-copy">
               <span className="eyebrow"><IconFilm size={15} /> Tu espacio familiar</span>
@@ -172,7 +171,7 @@ export default async function HomePage() {
             </div>
             <div className="home-empty-mark" aria-hidden="true"><IconFilm size={42} /></div>
           </section>
-        )}
+        ) : null}
 
         <Suspense fallback={<div className="rows-skeleton" aria-hidden="true" />}>
           <VodSections rows={rows} />

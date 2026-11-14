@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { AddonMetaPreview } from "@/lib/addons";
-import { IconArrowRight } from "./icons";
+import { IconArrowRight, IconPlay } from "./icons";
+import Rail from "./Rail";
 
 export function PosterCard({ meta }: { meta: AddonMetaPreview }) {
   const href = meta.type === "series"
@@ -16,6 +17,7 @@ export function PosterCard({ meta }: { meta: AddonMetaPreview }) {
         ) : (
           <span className="poster-fallback" aria-hidden="true"><span>{meta.type === "series" ? "SERIE" : "PELÍCULA"}</span>{meta.name}</span>
         )}
+        <span className="poster-play" aria-hidden="true"><IconPlay size={18} /></span>
         {meta.imdbRating ? <span className="poster-rating">{meta.imdbRating}</span> : null}
         {!meta.playableId && meta.p2p ? (
           <span className="poster-flag" title="Los proveedores ofrecen esta película como torrent. Para verla en el navegador hace falta un resolver (debrid) configurado en el panel.">
@@ -46,7 +48,7 @@ export default function PosterRow({
 }) {
   if (metas.length === 0) return null;
   return (
-    <section className="row-section">
+    <section className="row-section" aria-label={title}>
       <div className="section-head">
         <div>
           <h2>{title}</h2>
@@ -58,11 +60,11 @@ export default function PosterRow({
           </Link>
         )}
       </div>
-      <div className="poster-row">
+      <Rail label={title}>
         {metas.map((meta) => (
           <PosterCard key={`${meta.type}:${meta.id}`} meta={meta} />
         ))}
-      </div>
+      </Rail>
     </section>
   );
 }

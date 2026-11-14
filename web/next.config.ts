@@ -22,13 +22,21 @@ const nextConfig: NextConfig = {
     // Next's inlined critical CSS and by the inline style attributes the
     // player uses for progress; `blob:` covers the generated WebVTT tracks and
     // the hls.js worker.
+    //
+    // `unsafe-eval` only in development: React rebuilds callstacks with eval()
+    // in dev mode, and without it hydration silently never happens — the page
+    // looks right and no button works. Production keeps script-src strict.
+    const scriptSrc =
+      process.env.NODE_ENV === "development"
+        ? "script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:"
+        : "script-src 'self' 'unsafe-inline' blob:";
     const csp = [
       "default-src 'self'",
       "base-uri 'self'",
       "object-src 'none'",
       "frame-ancestors 'self'",
       "form-action 'self'",
-      "script-src 'self' 'unsafe-inline' blob:",
+      scriptSrc,
       "worker-src 'self' blob:",
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: blob: https: http:",

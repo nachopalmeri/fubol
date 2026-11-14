@@ -578,9 +578,19 @@ export function matchFixtureChannels(fixture: Fixture, channels: Channel[]): Fix
     return { channel, score };
   });
 
+  // La misma señal suele venir de dos fuentes con el mismo nombre ("ESPN HD"
+  // importado de dos manifiestos). Para el que mira son el mismo botón, así
+  // que se queda la mejor puntuada de cada nombre.
+  const seenNames = new Set<string>();
   const channelsForFixture = scored
     .filter((entry) => entry.score > 0)
     .sort((a, b) => b.score - a.score)
+    .filter((entry) => {
+      const name = normalizeChannelName(entry.channel.name);
+      if (seenNames.has(name)) return false;
+      seenNames.add(name);
+      return true;
+    })
     .slice(0, 8)
     .map((entry) => entry.channel);
 

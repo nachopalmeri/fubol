@@ -94,7 +94,7 @@ export default async function SeriesWatchPage({
         type="series"
         id={streamId}
         title={name}
-        poster={meta?.poster}
+        poster={meta?.background ?? meta?.poster}
         subtitle={subtitle}
         storageKey={`series:${streamId}`}
         resumeFrom={resumeFrom}

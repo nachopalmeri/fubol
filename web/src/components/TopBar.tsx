@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   IconBall,
   IconFilm,
@@ -23,10 +23,33 @@ const NAV = [
   { href: "/aprender", label: "Aprender", icon: IconSpark },
 ];
 
+function initials(label: string): string {
+  const clean = label.replace(/[^A-Za-z0-9 ]/g, " ").trim();
+  if (!clean) return "?";
+  const words = clean.split(/\s+/).filter(Boolean);
+  if (words.length > 1) {
+    return words
+      .slice(0, 2)
+      .map((word) => word[0]?.toUpperCase() ?? "")
+      .join("");
+  }
+  return clean.slice(0, 2).toUpperCase();
+}
+
 export default function TopBar({ isAdmin, label }: { isAdmin: boolean; label: string }) {
   const pathname = usePathname();
   const router = useRouter();
   const [busy, setBusy] = useState(false);
+  // En la portada la barra flota sobre el hero; después de bajar un poco se
+  // vuelve opaca para que el texto no compita con la carátula de atrás.
+  const [scrolled, setScrolled] = useState(false);
+
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 24);
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
 
   if (pathname.startsWith("/entrar") || pathname.startsWith("/admin/login")) return null;
 
@@ -42,7 +65,7 @@ export default function TopBar({ isAdmin, label }: { isAdmin: boolean; label: st
 
   return (
     <>
-      <header className="topbar">
+      <header className="topbar" data-scrolled={scrolled}>
         <Link href="/" className="brand" aria-label="Fubol, inicio">
           <span className="brand-mark">
             <IconBall size={19} />
@@ -70,8 +93,8 @@ export default function TopBar({ isAdmin, label }: { isAdmin: boolean; label: st
             </Link>
           ) : null}
           <button className="user-chip" onClick={() => void logout()} disabled={busy} title="Cerrar sesión">
-            <span className="user-dot" />
-            <span>{label}</span>
+            <span className="user-avatar" aria-hidden="true">{initials(label)}</span>
+            <span className="user-name">{label}</span>
             <IconLogout size={15} />
           </button>
         </div>

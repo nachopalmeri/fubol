@@ -49,7 +49,7 @@ export default function TitleHero({
             {metaLine.map((item, index) => (
               <span key={`${item}-${index}`} style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
                 {index > 0 && <span className="dot" />}
-                {/^[0-9.]+$/.test(item) ? <span className="title-rating">★ {item}</span> : item}
+                {/^\d{1,2}(\.\d)?$/.test(item) ? <span className="title-rating">★ {item}</span> : item}
               </span>
             ))}
           </div>
