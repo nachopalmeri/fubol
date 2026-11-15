@@ -215,7 +215,10 @@ def align(subtitle_url: str, video_url: str) -> dict:
         LOG.info("audio extraido: %.1f MB (%ss)", os.path.getsize(audio) / 1e6, window_s)
 
         process = subprocess.run(
-            ["ffsubsync", audio, "-i", source, "-o", synced, "--max-offset-seconds", "120"],
+            # Only a constant shift: the player applies one, and letting
+            # ffsubsync also rescale the timing (framerate) returned offsets
+            # that only make sense together with that rescale.
+            ["ffsubsync", audio, "-i", source, "-o", synced, "--max-offset-seconds", "120", "--no-fix-framerate"],
             capture_output=True,
             text=True,
             timeout=ALIGN_TIMEOUT_S,

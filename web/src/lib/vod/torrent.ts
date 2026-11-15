@@ -171,6 +171,21 @@ export function torrentKeyOf(url: string): string | null {
   return match?.[1] && match[2] ? `${match[1].toLowerCase()}/${match[2]}` : null;
 }
 
+/**
+ * The plain file behind a resolver URL, remuxed or not.
+ *
+ * Aligning subtitles against the audio only needs the first minutes of sound.
+ * Asking the HLS form for it makes the resolver transcode video nobody will
+ * watch; the plain file is read with range requests and only the audio is
+ * decoded.
+ */
+export function directMediaUrl(url: string): string {
+  const base = torrentServerBase();
+  if (!base || !url.startsWith(`${base}/`)) return url;
+  const key = torrentKeyOf(url);
+  return key ? `${base}/${key}` : url;
+}
+
 export function torrentResolverEnabled(): boolean {
   return torrentServerBase() !== undefined;
 }

@@ -2,6 +2,20 @@
 
 Actualizado: 2026-11-15
 
+## Ver ahora: nunca trabado, fuentes elegibles y subtítulos alineados por copia (2026-11-15)
+- [x] **El reproductor ya no se queda en "Conectando…"**: cada fuente tiene 20 s para mostrar imagen (50 s si es P2P) y después pasa sola a la siguiente que no falló; una película que se queda cargando 30 s también cambia, retomando donde iba. La pantalla dice qué fuente prueba, cuántos segundos lleva, cuándo va a cambiar, y ofrece "Probar otra fuente" a los 6 s. Verificado reteniendo la primera fuente para siempre: a los 50 s pasó a la siguiente.
+- [x] hls.js abandonaba fuentes P2P que sí andaban (10 s al primer byte por defecto; la playlist de un remux tardó 9 s): las fuentes P2P tienen ahora 60-90 s, con el vigilante como techo.
+- [x] Se precalientan las 3 mejores fuentes P2P (antes 1) y sobre el archivo plano, no sobre el HLS (que arrancaba una transcodificación que nadie miraba).
+- [x] Torrents sin nadie compartiendo van al final de la lista (antes podían quedar primeros).
+- [x] **Rediseño de "Ver ahora"** (variante "lista debajo", elegida por el usuario): barra de qué se está viendo y cómo están los subtítulos, y lista de fuentes clickeable con calidad, release legible (sin "[TORRENT🧲] Comet"), idioma, tamaño, cuántos comparten y estado (en pantalla / abriendo / no arrancó). Botón "Ver ahora" o "Seguir desde 40:23" en el hero. Sin el párrafo técnico. Capturas a 1440 y 390; detector de diseño limpio.
+- [x] **Causa del sync malo**: el desfase medido se guardaba por título y fuente, no por pista, así que el de una pista se aplicaba a todas; y el id de la fuente cambiaba entre visitas. Ahora se guarda por **copia** (hash/archivo) y **pista**.
+- [x] **ffsubsync corregía también la velocidad** y devolvía corrimientos que solo valen con ese reescalado: para la misma copia daba −13,5, +12,8 y −7,4 s. Con corrimiento puro (`--no-fix-framerate`) y 7 min de audio, cinco pistas de distintas subidas midieron +12,76 a +12,84 s. Era real: la copia REMASTERED arranca 12,8 s después que la versión de los subtítulos.
+- [x] **El corrimiento es de la copia**: se mide una vez contra el audio y todas las pistas de esa copia quedan alineadas al instante (su lugar entre las pistas + el corrimiento de la copia). Verificado: la pista en inglés quedó en 12,83 s sin medir (su medición propia daba 12,84).
+- [x] Comparación entre pistas por **consenso** (hasta 4, de distintos proveedores) en vez de contra una sola pista al azar.
+- [x] El ajuste a mano (+/−) se guarda para esa copia y pista en el servidor y nunca lo pisa una medición; "Volver al ajuste automático" lo descarta.
+- [x] **231 tests** en verde, build de producción OK.
+- [ ] El sincronizador por audio necesita la PC prendida (como el resolver). Sin él, los subtítulos quedan con el consenso entre pistas, que no ve las diferencias de intro entre copias.
+
 ## Todos los addons entregando (2026-11-15) — rama `addons-todos-entregando`, falta merge a main
 - [x] **Comet, MediaFusion y Meteor estaban instalados y mudos**: los tres responden (1.006, 25 y 154 fuentes para una película), pero la app cortaba la lista concatenada en 40 y solo quedaban las de Torrentio. Ahora se toma por turnos de cada addon (`interleaveByAddon`): 3 fuentes de cada uno en película y en serie, verificado en local.
 - [x] **Bug grave del resolver**: todas las películas remuxeadas compartían la sesión `/hlsv2/fubol/`, y el servidor contestaba con la playlist de la película que estuviera abierta (medido: pedí una y devolvió otra). Ahora hay una sesión por archivo (`/hlsv2/<hash>-<idx>/`), así dos pantallas no se pisan.

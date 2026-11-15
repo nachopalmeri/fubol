@@ -15,7 +15,7 @@ import {
 } from "../addons";
 import { listAddonRows, type AddonRow } from "./store";
 import { dedupeSources, episodeOf, interleaveByAddon, normalizeStreams, type VodSource } from "./rank";
-import { syncTorrentServerSettings, torrentServerBase, resolverStatus } from "./torrent";
+import { directMediaUrl, syncTorrentServerSettings, torrentServerBase, resolverStatus } from "./torrent";
 import { filterAvailable, validateVodSource } from "./availability";
 import { shortHash } from "../crypto";
 import { getOpenFilm, getOpenFilmMetas, OPEN_FILM_ADDON, openFilmsEnabled } from "./open-films";
@@ -451,7 +451,10 @@ export async function getPlayableVodStreams(type: string, id: string): Promise<V
 
   // Ask the streaming server for the first bytes of the best candidate now, so
   // the swarm is warm by the time somebody presses play instead of after it.
-  if (torrents[0]) warmTorrent(torrents[0].url);
+  // The next two as well: when the first swarm turns out to be dead, the
+  // player moves on, and a warm second candidate starts in seconds instead
+  // of another minute.
+  for (const source of sources.filter((item) => item.viaTorrent).slice(0, 3)) warmTorrent(source.url);
 
   return { ...result, sources: sources.sort((a, b) => b.score - a.score), kinds };
 }
@@ -463,7 +466,10 @@ function warmTorrent(url: string): void {
   if (warming.has(url)) return;
   warming.add(url);
   if (warming.size > 200) warming.clear();
-  void fetch(url, {
+  // The plain file, even for a remuxed source: asking the HLS form would
+  // start a transcode nobody is watching yet. Joining the swarm is the slow
+  // part, and the plain file does that just as well.
+  void fetch(directMediaUrl(url), {
     headers: { range: "bytes=0-65535" },
     signal: AbortSignal.timeout(120_000),
   })

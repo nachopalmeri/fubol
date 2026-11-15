@@ -1,8 +1,28 @@
 import type { AddonRef, RawAddonStream } from "../addons";
+import { shortHash } from "../crypto";
+import { readRelease, shortAddonName } from "./release";
 import { looksWebPlayable, resolveTorrentHlsUrl, resolveTorrentUrl, torrentKeyOf, webPlayableBonus } from "./torrent";
 
 export interface VodSource {
+  /**
+   * Stable across visits: the addon plus the copy. It used to include the
+   * position in the addon's answer, which changes whenever the addon re-ranks,
+   * so anything remembered for a source (its subtitle alignment) was lost.
+   */
   id: string;
+  /**
+   * The file itself, whichever addon listed it: `hash/index` for a torrent,
+   * a hash of the address otherwise. Subtitle alignment belongs to the copy.
+   */
+  copyId: string;
+  /** Release name without the addon's decoration. */
+  releaseName: string;
+  /** Origin, codec and audio, read from the name. */
+  releaseTags: string[];
+  /** Spoken languages the name mentions. */
+  languages: string[];
+  /** People sharing the torrent, when the addon says so. */
+  seeders: number | null;
   addonId: string;
   addonName: string;
   title: string;
@@ -100,7 +120,7 @@ export function normalizeStreams(
   options: { episode?: EpisodeRef } = {},
 ): VodSource[] {
   const sources: VodSource[] = [];
-  for (const [index, stream] of streams.entries()) {
+  for (const stream of streams) {
     const title = stream.title || stream.name || "Fuente";
     const description = stream.description || "";
     const filename = stream.behaviorHints?.filename;
@@ -143,11 +163,23 @@ export function normalizeStreams(
     if (!url) continue;
 
     const height = detectHeight(haystack);
+    const release = readRelease({
+      title: stream.title || stream.name,
+      description,
+      filename,
+      seeders: stream.behaviorHints?.seeders,
+    });
+    const copyId = (viaTorrent ? torrentKeyOf(url) : null) ?? shortHash(url.split("?")[0] ?? url, 20);
     const sizeBytes = stream.behaviorHints?.videoSize ?? parseSize(description) ?? parseSize(title);
     const base = {
-      id: `${addon.id}:${index}:${url.slice(-16)}`,
+      id: `${addon.id}:${copyId}`,
+      copyId,
+      releaseName: release.name || title,
+      releaseTags: release.tags,
+      languages: release.languages,
+      seeders: release.seeders,
       addonId: addon.id,
-      addonName: addon.name,
+      addonName: shortAddonName(addon.name),
       title,
       description,
       url,
@@ -168,12 +200,16 @@ export function normalizeStreams(
     };
     // A swarm-backed file only plays as well as its seeders and container, so
     // a well-seeded MP4/H.264 release outranks a bigger one that may stall.
-    // Some addons state the seeders as a field instead of in the text.
-    const seeders = stream.behaviorHints?.seeders;
-    const seedBonus =
-      viaTorrent && typeof seeders === "number" && seeders > 0 && !haystack.includes("👤")
-        ? Math.min(10, seeders / 50)
-        : 0;
+    // Some addons state the seeders as a field instead of in the text. A
+    // swarm nobody shares never starts: it is what left the player on
+    // "Conectando…", so it goes to the bottom instead of first in line.
+    const seeders = release.seeders;
+    let seedBonus = 0;
+    if (viaTorrent && seeders !== null) {
+      if (seeders === 0) seedBonus = -45;
+      else if (seeders < 3) seedBonus = -15;
+      else if (!haystack.includes("👤")) seedBonus = Math.min(10, seeders / 50);
+    }
     // Two decimals: enough to order by seeders without float noise in the API.
     const score =
       Math.round((scoreSource(base) + (viaTorrent ? webPlayableBonus(haystack) : 0) + seedBonus) * 100) / 100;
@@ -188,7 +224,7 @@ export function dedupeSources(sources: VodSource[]): VodSource[] {
   for (const source of sources) {
     // Two addons often index the same torrent: the same file is one source,
     // and the HLS form keeps the file in the query, not in the path.
-    const key = (source.viaTorrent ? torrentKeyOf(source.url) : null) ?? `${source.url.split("?")[0]}`;
+    const key = source.copyId;
     if (seen.has(key)) continue;
     seen.add(key);
     out.push(source);

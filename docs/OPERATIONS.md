@@ -60,6 +60,8 @@ cuando la app deja de alcanzarlo.
 | Las películas dan "sin fuentes" | El resolver no está configurado | Panel → Addons VOD → *Resolver de torrents* → dirección + *Guardar y probar* |
 | Salud dice "Sincronizador por audio: sin respuesta" | El túnel del sincronizador cambió de dirección o el contenedor no está | `node scripts/subsync-publish.mjs` (lo hace solo el lanzador y el watchdog) |
 | Un addon dice "responde pero no entrega" | El manifest está bien pero el servidor del addon falla o la sesión venció | Esperar y volver a mirar; si sigue, renovar el manifest en *Configurar ↗* |
+| Los subtítulos aparecen corridos | La copia tiene otra duración de intro que la versión con la que se hicieron los subtítulos | Se corrige solo: la primera vez se mide contra el audio de esa copia (unos 15-40 s, en segundo plano) y vale para todas sus pistas. Para corregir a mano: CC → +/−; queda guardado para esa copia en todos los dispositivos. |
+| Una película queda "Abriendo…" | La copia no tiene quién la comparta | No hace falta hacer nada: a los 20 s (50 s si es P2P) pasa sola a la siguiente. "Probar otra fuente" saltea antes. |
 | Los subtítulos no están alineados | Se midió contra otra pista, no contra el audio | Se mide solo la primera vez; el resultado queda en el servidor. Para forzarlo: borrar el renglón de sync en el panel de Salud o esperar la medición por audio. |
 | Un canal de fútbol no abre | El addon de Sports Streams necesita el manifest con tu verificación | Panel → Fuentes en vivo → Editar → Manifest URL (está en `.secrets/sports-manifest.txt`) |
 | Un addon de subtítulos no trae pistas | El manifest público responde 404 hasta que te registrás | Panel → Addons VOD → *Manifest* → pegá la URL con tu sesión (ver `.secrets/subtitle-manifests.json`) |

@@ -13,6 +13,10 @@ export interface StreamTokenPayload extends Record<string, unknown> {
    * again instead of replaying a URL that another instance cannot use.
    */
   a?: { i: string; t: string; s: string };
+  /** Subtitle tokens: the title the track belongs to. */
+  t?: string;
+  /** Subtitle tokens: which track this is, so its alignment can be kept apart. */
+  i?: string;
 }
 
 const ALLOWED_HEADERS = new Set(["user-agent", "referer", "origin", "accept", "accept-language"]);
@@ -81,11 +85,19 @@ export function signRelayUrl(
 export function signSubtitleUrl(
   url: string,
   ttlMs = 12 * 3600_000,
-  extra: { titleId?: string } = {},
+  extra: { titleId?: string; trackId?: string } = {},
 ): string {
   // The title reference travels with the token so the server can cache the
   // alignment it computes: the same film has to sync the same way on every
   // device of the house.
-  const token = signToken({ u: url, k: "vod", ...(extra.titleId ? { t: extra.titleId } : {}) }, ttlMs);
+  const token = signToken(
+    {
+      u: url,
+      k: "vod",
+      ...(extra.titleId ? { t: extra.titleId } : {}),
+      ...(extra.trackId ? { i: extra.trackId } : {}),
+    },
+    ttlMs,
+  );
   return `/api/subtitles/proxy?t=${encodeURIComponent(token)}`;
 }

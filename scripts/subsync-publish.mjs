@@ -43,8 +43,8 @@ function startContainer(token) {
     [
       "run", "-d", "--name", CONTAINER, "--restart", "unless-stopped",
       "-p", `127.0.0.1:${LOCAL_PORT}:8080`,
-      "-e", "SUBSYNC_AUDIO_WINDOW=90",
-      "-e", "SUBSYNC_EXTRACT_TIMEOUT=100",
+      "-e", "SUBSYNC_AUDIO_WINDOW=420",
+      "-e", "SUBSYNC_EXTRACT_TIMEOUT=170",
       // Sin valor: Docker lo toma del entorno de este proceso, así el token no
       // queda en la línea de comandos.
       "-e", "SUBSYNC_TOKEN",

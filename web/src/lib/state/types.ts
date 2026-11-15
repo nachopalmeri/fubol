@@ -63,7 +63,12 @@ export interface SyncRecord {
   confidence: number;
   /** When the alignment was measured; a stale one can be recomputed. */
   at: number;
-  source: "audio" | "reference";
+  /** Measured against the audio, estimated from other tracks, or set by a person. */
+  source: "audio" | "reference" | "manual";
+  /** Title, copy and subtitle track the shift belongs to (absent on old records). */
+  title?: string;
+  copy?: string;
+  track?: string;
 }
 
 export interface StateDoc {

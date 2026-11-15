@@ -1,10 +1,11 @@
 "use client";
 
-import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from "react";
+import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type HlsType from "hls.js";
 import LearningPanel from "./LearningPanel";
 import { cuesToVtt, parseCues } from "@/lib/subs/format";
+import { describeSync } from "@/lib/subs/describe";
 import {
   IconAlert,
   IconChevronDown,
@@ -39,9 +40,10 @@ export interface PlayerSource {
   height?: number | null;
   /** Same-upload caption assets, not a claim of perfect human-verified alignment. */
   matchedSubtitleIds?: string[];
-  /** Alignment the server already measured for this title and source. */
-  syncOffsetMs?: number | null;
-  syncConfidence?: number | null;
+  /** Served from a swarm: the first bytes can take up to a minute. */
+  p2p?: boolean;
+  /** The file itself, whichever addon listed it; alignment is kept per copy. */
+  copyId?: string;
 }
 
 export interface PlayerSubtitle {
@@ -49,6 +51,33 @@ export interface PlayerSubtitle {
   label: string;
   lang: string;
   url: string;
+  forced?: boolean;
+}
+
+/** A shift the house already measured or set for one copy and one track. */
+export interface PlayerAlignment {
+  copy: string;
+  track: string;
+  offsetMs: number;
+  confidence: number;
+  method: "audio" | "reference" | "manual";
+}
+
+export type SyncMethod = "none" | "reference" | "audio" | "manual";
+
+export interface PlayerState {
+  index: number;
+  status: Status;
+  /** Sources that did not start or stopped for good in this visit. */
+  failed: number[];
+  /** Seconds the current attempt has been loading. */
+  elapsedS: number;
+  subtitle: {
+    trackId: string | null;
+    offsetMs: number;
+    method: SyncMethod;
+    measuring: "reference" | "audio" | null;
+  };
 }
 
 interface Props {
@@ -66,9 +95,28 @@ interface Props {
   onProgress?: (position: number, duration: number) => void;
   /** Where the family left off, when the page was opened from that list. */
   resumeFrom?: number;
+  /** Alignments already known for this title (per copy and track). */
+  alignments?: PlayerAlignment[];
+  /** A source chosen outside the player; the nonce repeats a pick of the same one. */
+  pick?: { index: number; nonce: number };
+  onStateChange?: (state: PlayerState) => void;
+  /** Rendered right under the video, before the English practice. */
+  belowPlayer?: ReactNode;
 }
 
-type Status = "loading" | "playing" | "paused" | "error" | "switching";
+export type Status = "loading" | "playing" | "paused" | "error" | "switching";
+
+/**
+ * How long a source gets to show its first frame before the next one is
+ * tried. A cold swarm measured 63.7 s to first byte once, but most answer in
+ * under twenty; waiting the full minute on a dead one is what left the screen
+ * on "Conectando…" with nothing else to do.
+ */
+const START_BUDGET_MS = { direct: 20_000, p2p: 50_000 } as const;
+/** A film that was playing and stays buffering this long moves on. */
+const VOD_STALL_MS = 30_000;
+/** After this, the loading screen offers to skip to another source. */
+const OFFER_SKIP_MS = 6_000;
 type Panel = "settings" | "subs" | "quality" | null;
 
 function formatTime(seconds: number): string {
@@ -78,6 +126,16 @@ function formatTime(seconds: number): string {
   const m = Math.floor((total % 3600) / 60);
   const s = total % 60;
   return h > 0 ? `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}` : `${m}:${String(s).padStart(2, "0")}`;
+}
+
+/** hls.js load policy for sources that are slow to answer but do answer. */
+function slowPolicy(budgetMs: number) {
+  return {
+    maxTimeToFirstByteMs: budgetMs,
+    maxLoadTimeMs: budgetMs + 30_000,
+    timeoutRetry: { maxNumRetry: 1, retryDelayMs: 0, maxRetryDelayMs: 0 },
+    errorRetry: { maxNumRetry: 2, retryDelayMs: 1000, maxRetryDelayMs: 8000 },
+  };
 }
 
 function readStored(key: string): number {
@@ -102,6 +160,10 @@ export default function Player({
   onSourceChange,
   onProgress,
   resumeFrom = 0,
+  alignments = [],
+  pick,
+  onStateChange,
+  belowPlayer,
 }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -124,7 +186,6 @@ export default function Player({
   onSourceChangeRef.current = onSourceChange;
   const onProgressRef = useRef(onProgress);
   onProgressRef.current = onProgress;
-  const runAutoSyncRef = useRef<() => void>(() => undefined);
 
   const [sourceIndex, setSourceIndex] = useState(0);
   const [retryNonce, setRetryNonce] = useState(0);
@@ -146,13 +207,26 @@ export default function Player({
   const [duration, setDuration] = useState(0);
   const [activeSub, setActiveSub] = useState<string | null>(null);
   const [offsetMs, setOffsetMs] = useState(0);
+  const [syncMethod, setSyncMethod] = useState<SyncMethod>("none");
+  const [measuring, setMeasuring] = useState<"reference" | "audio" | null>(null);
+  const [resyncNonce, setResyncNonce] = useState(0);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
-  const [syncBusy, setSyncBusy] = useState(false);
   const [seekHint, setSeekHint] = useState<string | null>(null);
   const [learningOpen, setLearningOpen] = useState(false);
+  /** Sources that did not start, or stopped for good, during this visit. */
+  const [failed, setFailed] = useState<number[]>([]);
+  const failedRef = useRef<number[]>([]);
+  failedRef.current = failed;
+  const [elapsedS, setElapsedS] = useState(0);
+  /** When the current attempt started, and whether it ever showed a frame. */
+  const attemptStartRef = useRef(Date.now());
+  const playedRef = useRef(false);
+  const statusRef = useRef<Status>("loading");
+  statusRef.current = status;
 
   indexRef.current = sourceIndex;
   const source = sources[sourceIndex];
+  const startBudgetMs = mode === "live" ? START_BUDGET_MS.direct : source?.p2p ? START_BUDGET_MS.p2p : START_BUDGET_MS.direct;
 
   /**
    * The delay the family cares about is "how far behind the stadium am I",
@@ -223,11 +297,45 @@ export default function Player({
   const failover = useRef<(reason: string) => void>(() => undefined);
   failover.current = (reason: string) => {
     setPanel(null);
-    const next = indexRef.current + 1;
-    if (next < sourcesRef.current.length) {
+    const current = indexRef.current;
+    const total = sourcesRef.current.length;
+    // Where the film was, so the next copy picks up there instead of at zero.
+    const video = videoRef.current;
+    if (mode === "vod" && video && playedRef.current && video.currentTime > 5) {
+      try {
+        localStorage.setItem(`fubol:resume:${storageKey}`, String(video.currentTime));
+      } catch {
+        // storage may be disabled
+      }
+    }
+    const nowFailed = failedRef.current.includes(current) ? failedRef.current : [...failedRef.current, current];
+    failedRef.current = nowFailed;
+    setFailed(nowFailed);
+    // The next source nobody has given up on yet, after this one first.
+    const order = [...Array.from({ length: total }, (_, offset) => (current + 1 + offset) % total)];
+    const next = order.find((index) => index !== current && !nowFailed.includes(index));
+    if (next !== undefined && total > 1) {
       setStatus("switching");
       setError(reason);
       setSourceIndex(next);
+      onSourceChangeRef.current?.(sourcesRef.current[next]!);
+      return;
+    }
+    if (total > 1) {
+      // A match keeps going: live sources drop and come back, so once a
+      // minute the whole list gets another round. A film's dead swarm does
+      // not come back in a minute, so there it is the person's call.
+      if (mode === "live" && Date.now() - soloRetryAtRef.current > 60_000) {
+        soloRetryAtRef.current = Date.now();
+        failedRef.current = [current];
+        setFailed([current]);
+        setStatus("switching");
+        setError(reason);
+        setSourceIndex((current + 1) % total);
+        return;
+      }
+      setStatus("error");
+      setError(reason);
       return;
     }
     // With a single source there is nothing to switch to, but restarting it
@@ -248,6 +356,7 @@ export default function Player({
   const sourceUrl = source?.url;
   const sourceKind = source?.kind;
   const sourceTargetDuration = source?.targetDuration ?? null;
+  const sourceP2p = source?.p2p === true;
 
   useEffect(() => {
     const video = videoRef.current;
@@ -261,6 +370,9 @@ export default function Player({
     let hls: HlsType | null = null;
     retriesRef.current = 0;
     lastProgressRef.current = Date.now();
+    attemptStartRef.current = Date.now();
+    playedRef.current = false;
+    setElapsedS(0);
     setStatus("loading");
     setError(null);
     setLevels([]);
@@ -353,6 +465,18 @@ export default function Player({
         manifestLoadingMaxRetry: 4,
         levelLoadingMaxRetry: 6,
         startPosition: mode === "vod" && resumeAt > 5 ? resumeAt : -1,
+        // A swarm-backed source is remuxed on the fly: its playlist took 9 s
+        // to appear when measured, and the first segment of a cold swarm
+        // longer. hls.js gives up after 10 s to first byte by default, which
+        // abandoned working sources; the watchdog above already bounds the
+        // whole start, so the loaders only need not to quit early.
+        ...(sourceP2p
+          ? {
+              manifestLoadPolicy: { default: slowPolicy(60_000) },
+              playlistLoadPolicy: { default: slowPolicy(60_000) },
+              fragLoadPolicy: { default: slowPolicy(90_000) },
+            }
+          : {}),
       });
       hlsRef.current = hls;
 
@@ -416,7 +540,7 @@ export default function Player({
       video.removeAttribute("src");
       video.load();
     };
-  }, [sourceUrl, sourceKind, sourceTargetDuration, sourceIndex, retryNonce, mode, storageKey]);
+  }, [sourceUrl, sourceKind, sourceTargetDuration, sourceP2p, sourceIndex, retryNonce, mode, storageKey]);
 
   /* -------------------------- delay measurement -------------------------
    * Three different quantities used to be conflated into one "latency" chip:
@@ -482,114 +606,221 @@ export default function Player({
     return () => clearInterval(timer);
   }, [mode, status]);
 
-  /**
-   * The alignment that matches the film itself, not just another track.
-   *
-   * Comparing two tracks only says they agree with each other; the shift
-   * against the actual audio is what the viewer notices. That measurement
-   * takes minutes, so it runs once in the background and the server keeps it:
-   * every other device of the house gets the offset straight away.
-   */
-  const audioSyncRef = useRef<string | null>(null);
+  /* ------------------------------ watchdog ------------------------------
+   * Nothing on this screen may wait forever. A source gets a fixed budget to
+   * show its first frame (longer for a swarm, which has to find peers), and a
+   * film that was playing gets one to recover from buffering; past either,
+   * the next source is tried. The elapsed time is shown, with a way out.
+   * ------------------------------------------------------------------- */
   useEffect(() => {
-    if (!activeSubtitle || !source) return;
-    const key = `${source.id}:${activeSubtitle.id}`;
-    if (audioSyncRef.current === key) return;
-    // The server already knows the alignment of this copy: nothing to measure.
-    if (typeof source.syncOffsetMs === "number") return;
-    const flag = `fubol:audio-sync:${storageKey}:${activeSubtitle.id}`;
-    try {
-      // The alignment against the audio was already measured on this device.
-      if (localStorage.getItem(flag) !== null) return;
-    } catch {
-      // storage may be disabled
-    }
-    const tokenOf = (url: string) => {
-      try {
-        return new URL(url, window.location.origin).searchParams.get("t");
-      } catch {
-        return null;
-      }
-    };
-    const target = tokenOf(activeSubtitle.url);
-    const stream = tokenOf(source.url);
-    if (!target || !stream) return;
-    audioSyncRef.current = key;
-    void fetch("/api/subtitles/sync", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ mode: "audio", target, stream }),
-    })
-      .then(async (response) => {
-        if (!response.ok) return;
-        const data = (await response.json()) as { offsetMs?: number; confidence?: number };
-        if (typeof data.offsetMs !== "number") return;
-        try {
-          localStorage.setItem(flag, String(data.offsetMs));
-        } catch {
-          // storage may be disabled
+    const timer = setInterval(() => {
+      const current = statusRef.current;
+      if (current !== "loading" && current !== "switching") return;
+      const now = Date.now();
+      const sinceStart = now - attemptStartRef.current;
+      setElapsedS(Math.floor(sinceStart / 1000));
+      if (!playedRef.current) {
+        if (sinceStart > startBudgetMs) {
+          failover.current(`No arrancó en ${Math.round(startBudgetMs / 1000)} s`);
         }
-        setOffsetMs(data.offsetMs);
-        setSyncMsg(
-          `Alineado con el audio: ${(data.offsetMs / 1000).toFixed(1)} s · confianza ${Math.round((data.confidence ?? 0) * 100)}%`,
-        );
-      })
-      .catch(() => undefined);
-  }, [activeSubtitle, source, storageKey]);
+        return;
+      }
+      if (mode === "vod" && now - lastProgressRef.current > VOD_STALL_MS) {
+        lastProgressRef.current = now;
+        failover.current("Se quedó cargando");
+      }
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [mode, startBudgetMs]);
 
-  /* ------------------------------ subtitles ----------------------------- */
+  /* ------------------------------ subtitles -----------------------------
+   * Which shift applies to the track on screen, in order of trust: what a
+   * person set by hand, then a measurement against this copy's audio, then
+   * an estimate from comparing with other tracks. Each is kept per copy and
+   * per track: the shift of the Spanish track says nothing about the English
+   * one, nor about another release of the film.
+   * ------------------------------------------------------------------- */
+  const copyId = source?.copyId ?? source?.id ?? "";
+  const syncKeyNow = activeSubtitle ? `${copyId}|${activeSubtitle.id}` : null;
+  const syncKeyRef = useRef<string | null>(null);
+  syncKeyRef.current = syncKeyNow;
+  const manualKey = (copy: string, track: string) => `fubol:suboffset:${copy}:${track}`;
+  const measuredRef = useRef(new Set<string>());
+
   useEffect(() => {
     if (subTouchedRef.current) return;
     const matched = subtitles.find((track) => source?.matchedSubtitleIds?.includes(track.id));
-    const spanish = subtitles.find((track) => track.lang === "es" && !/forced|forzado/i.test(track.label));
-    const preferred = matched ?? spanish ?? subtitles[0];
+    const spanish = subtitles.find((track) => track.lang === "es" && !track.forced);
+    const preferred = matched ?? spanish ?? subtitles.find((track) => !track.forced) ?? subtitles[0];
     if (preferred && preferred.id !== activeSub) setActiveSub(preferred.id);
   }, [subtitles, activeSub, source?.id, source?.matchedSubtitleIds]);
 
-  useEffect(() => {
-    if (!activeSub) return;
+  const tokenOf = (url: string) => {
     try {
-      const stored = Number(localStorage.getItem(`fubol:offset:${storageKey}:${activeSub}`));
-      if (Number.isFinite(stored) && localStorage.getItem(`fubol:offset:${storageKey}:${activeSub}`) !== null) {
-        setOffsetMs(stored);
-        return;
-      }
+      return new URL(url, window.location.origin).searchParams.get("t");
+    } catch {
+      return null;
+    }
+  };
+
+  useEffect(() => {
+    if (!activeSubtitle || !source || !syncKeyNow) {
+      setOffsetMs(0);
+      setSyncMethod("none");
+      setMeasuring(null);
+      return;
+    }
+    const key = syncKeyNow;
+    const track = activeSubtitle;
+    const stillCurrent = () => syncKeyRef.current === key;
+    setSyncMsg(null);
+
+    let manual: number | null = null;
+    try {
+      const stored = localStorage.getItem(manualKey(copyId, track.id));
+      if (stored !== null && Number.isFinite(Number(stored))) manual = Number(stored);
     } catch {
       // storage may be disabled
     }
-    // Nothing measured on this device: the server may already know the
-    // alignment of this copy, because it was measured for another screen.
-    if (typeof source?.syncOffsetMs === "number") {
-      setOffsetMs(source.syncOffsetMs);
+    const known = alignments.find((item) => item.copy === copyId && item.track === track.id);
+    if (manual !== null) {
+      setOffsetMs(manual);
+      setSyncMethod("manual");
+      setMeasuring(null);
       return;
     }
-    setOffsetMs(0);
-  }, [activeSub, storageKey, source?.id, source?.syncOffsetMs]);
-
-  /**
-   * The subtitles have to land right without anyone pressing anything.
-   *
-   * When a track is picked and neither the device nor the server knows the
-   * alignment, the two tracks are compared once: it costs a second, it needs
-   * no sidecar, and it is what stops the family from watching the dialogue
-   * arrive after the line was said.
-   */
-  const autoSyncedRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (!activeSubtitle || subtitles.length < 2) return;
-    if (autoSyncedRef.current === activeSubtitle.id) return;
-    let known = false;
-    try {
-      known = localStorage.getItem(`fubol:offset:${storageKey}:${activeSubtitle.id}`) !== null;
-    } catch {
-      known = false;
+    if (known && (known.method === "manual" || known.method === "audio")) {
+      setOffsetMs(known.offsetMs);
+      setSyncMethod(known.method);
+      setMeasuring(null);
+      return;
     }
-    if (known) return;
-    if (typeof source?.syncOffsetMs === "number") return;
-    autoSyncedRef.current = activeSubtitle.id;
-    void runAutoSyncRef.current();
-  }, [activeSubtitle, subtitles, storageKey, source?.id, source?.syncOffsetMs]);
+    setOffsetMs(known?.offsetMs ?? 0);
+    setSyncMethod(known ? "reference" : "none");
 
+    // Measure once per copy and track in this visit.
+    if (measuredRef.current.has(key)) {
+      setMeasuring(null);
+      return;
+    }
+    measuredRef.current.add(key);
+    const target = tokenOf(track.url);
+    const stream = tokenOf(source.url);
+    if (!target) return;
+
+    const apply = (data: { offsetMs?: number; confidence?: number; method?: SyncMethod }, fallback: SyncMethod) => {
+      if (!stillCurrent() || typeof data.offsetMs !== "number") return;
+      setSyncMethod((method) => {
+        // A person's adjustment made while this was running wins.
+        if (method === "manual") return method;
+        setOffsetMs(data.offsetMs!);
+        return data.method ?? fallback;
+      });
+    };
+
+    void (async () => {
+      // 1. A second: compare with up to four other tracks, from different
+      //    providers where possible, and keep the shift most agree on.
+      if (!known) {
+        const others = subtitles.filter((item) => item.id !== track.id && !item.forced);
+        const byProvider = new Map<string, PlayerSubtitle>();
+        for (const item of others) {
+          const provider = item.id.split(":")[0] ?? item.id;
+          if (!byProvider.has(provider)) byProvider.set(provider, item);
+        }
+        const picked = [...byProvider.values(), ...others].filter((item, index, list) => list.indexOf(item) === index).slice(0, 4);
+        const references = picked.map((item) => tokenOf(item.url)).filter((value): value is string => Boolean(value));
+        if (references.length > 0) {
+          if (stillCurrent()) setMeasuring("reference");
+          try {
+            const response = await fetch("/api/subtitles/sync", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ mode: "reference", target, references, ...(stream ? { stream } : {}) }),
+            });
+            if (response.ok) apply(await response.json(), "reference");
+          } catch {
+            // the audio measurement below still runs
+          }
+        }
+      }
+      // 2. Minutes, in the background: measure against this copy's audio.
+      if (!stream) {
+        if (stillCurrent()) setMeasuring(null);
+        return;
+      }
+      if (stillCurrent()) setMeasuring("audio");
+      try {
+        const response = await fetch("/api/subtitles/sync", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ mode: "audio", target, stream }),
+        });
+        if (response.ok) apply(await response.json(), "audio");
+      } catch {
+        // the estimate from other tracks stays
+      } finally {
+        if (stillCurrent()) setMeasuring(null);
+      }
+    })();
+    // `alignments` and `subtitles` come from the same response as the source;
+    // re-running on their identity would re-measure on every render.
+  }, [syncKeyNow, resyncNonce]);
+
+  /** A person's adjustment: kept on this device and shared with the house. */
+  const manualSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const nudgeOffset = (deltaMs: number) => {
+    if (!activeSubtitle || !source) return;
+    const track = activeSubtitle;
+    const next = Math.round((offsetMs + deltaMs) / 100) * 100;
+    setOffsetMs(next);
+    setSyncMethod("manual");
+    try {
+      localStorage.setItem(manualKey(copyId, track.id), String(next));
+    } catch {
+      // storage may be disabled
+    }
+    if (manualSaveTimer.current) clearTimeout(manualSaveTimer.current);
+    const target = tokenOf(track.url);
+    const stream = tokenOf(source.url);
+    if (!target || !stream) return;
+    manualSaveTimer.current = setTimeout(() => {
+      void fetch("/api/subtitles/sync", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ mode: "manual", target, stream, offsetMs: next }),
+      }).catch(() => undefined);
+    }, 1200);
+  };
+
+  /** Drops the hand adjustment and measures again. */
+  const backToAutomatic = () => {
+    if (!activeSubtitle || !source || !syncKeyNow) return;
+    if (manualSaveTimer.current) clearTimeout(manualSaveTimer.current);
+    try {
+      localStorage.removeItem(manualKey(copyId, activeSubtitle.id));
+    } catch {
+      // storage may be disabled
+    }
+    const target = tokenOf(activeSubtitle.url);
+    const stream = tokenOf(source.url);
+    const key = syncKeyNow;
+    void (async () => {
+      if (target && stream) {
+        await fetch("/api/subtitles/sync", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ mode: "clear", target, stream }),
+        }).catch(() => undefined);
+      }
+      measuredRef.current.delete(key);
+      setSyncMethod("none");
+      setResyncNonce((value) => value + 1);
+    })();
+  };
+
+  /** Fetched once per track; a new shift only rewrites the cue times. */
+  const vttCacheRef = useRef(new Map<string, string>());
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
@@ -602,21 +833,26 @@ export default function Player({
     let cancelled = false;
     void (async () => {
       try {
-        const response = await fetch(activeSubtitle.url);
-        if (!response.ok) throw new Error("subtitle fetch");
-        let vtt = await response.text();
-        if (offsetMs !== 0) {
-          vtt = cuesToVtt(
-            parseCues(vtt).map((cue) => ({
-              start: Math.max(0, cue.start + offsetMs),
-              end: Math.max(0, cue.end + offsetMs),
-              text: cue.text,
-            })),
-          );
+        let raw = vttCacheRef.current.get(activeSubtitle.id);
+        if (raw === undefined) {
+          const response = await fetch(activeSubtitle.url);
+          if (!response.ok) throw new Error("subtitle fetch");
+          raw = await response.text();
+          vttCacheRef.current.set(activeSubtitle.id, raw);
         }
+        if (cancelled) return;
+        const vtt =
+          offsetMs === 0
+            ? raw
+            : cuesToVtt(
+                parseCues(raw).map((cue) => ({
+                  start: Math.max(0, cue.start + offsetMs),
+                  end: Math.max(0, cue.end + offsetMs),
+                  text: cue.text,
+                })),
+              );
         const blob = new Blob([vtt], { type: "text/vtt;charset=utf-8" });
         url = URL.createObjectURL(blob);
-        if (cancelled) return;
         const track = document.createElement("track");
         track.kind = "subtitles";
         track.label = activeSubtitle.label;
@@ -630,7 +866,7 @@ export default function Player({
         video.appendChild(track);
         track.track.mode = "showing";
       } catch {
-        if (!cancelled) setSyncMsg("No se pudo cargar el subtítulo");
+        if (!cancelled) setSyncMsg("No se pudo cargar este subtítulo. Probá con otra pista.");
       }
     })();
 
@@ -640,14 +876,32 @@ export default function Player({
     };
   }, [activeSubtitle, offsetMs]);
 
+  /* ---------------------------- outside view ---------------------------- */
+  const onStateChangeRef = useRef(onStateChange);
+  onStateChangeRef.current = onStateChange;
   useEffect(() => {
-    if (!activeSub) return;
-    try {
-      localStorage.setItem(`fubol:offset:${storageKey}:${activeSub}`, String(offsetMs));
-    } catch {
-      // storage may be disabled
-    }
-  }, [offsetMs, activeSub, storageKey]);
+    onStateChangeRef.current?.({
+      index: sourceIndex,
+      status,
+      failed,
+      elapsedS,
+      subtitle: { trackId: activeSub, offsetMs, method: syncMethod, measuring },
+    });
+  }, [sourceIndex, status, failed, elapsedS, activeSub, offsetMs, syncMethod, measuring]);
+
+  /** A source picked from the list under the player. */
+  useEffect(() => {
+    if (!pick) return;
+    const index = pick.index;
+    if (index < 0 || index >= sourcesRef.current.length) return;
+    const nowFailed = failedRef.current.filter((item) => item !== index);
+    failedRef.current = nowFailed;
+    setFailed(nowFailed);
+    setError(null);
+    if (index === indexRef.current) setRetryNonce((value) => value + 1);
+    else setSourceIndex(index);
+    // Only a new pick acts; the index alone repeats on every render.
+  }, [pick?.nonce]);
 
   /* ------------------------------- video UI ------------------------------ */
   const clearStallTimer = () => {
@@ -675,6 +929,7 @@ export default function Player({
     lastProgressRef.current = Date.now();
     // Time advancing means it is not buffering, whatever the last event said.
     clearStallTimer();
+    if (!video.paused && video.readyState >= 3 && video.currentTime > 0) playedRef.current = true;
     if (status === "loading") setStatus("playing");
     setCurrent(video.currentTime);
     if (mode === "vod") {
@@ -800,62 +1055,6 @@ export default function Player({
     setCurrentLevel(index);
   };
 
-  const runAutoSync = async () => {
-    if (!activeSubtitle || subtitles.length < 2) {
-      setSyncMsg("Se necesitan dos pistas para comparar");
-      return;
-    }
-    const reference =
-      subtitles.find((track) => track.lang !== activeSubtitle.lang) ??
-      subtitles.find((track) => track.id !== activeSubtitle.id);
-    if (!reference) {
-      setSyncMsg("No hay otra pista de referencia");
-      return;
-    }
-    const tokenOf = (url: string) => {
-      try {
-        return new URL(url, window.location.origin).searchParams.get("t");
-      } catch {
-        return null;
-      }
-    };
-    const referenceToken = tokenOf(reference.url);
-    const targetToken = tokenOf(activeSubtitle.url);
-    if (!referenceToken || !targetToken) {
-      setSyncMsg("No se pudo preparar el sync");
-      return;
-    }
-    setSyncBusy(true);
-    setSyncMsg(null);
-    try {
-      const response = await fetch("/api/subtitles/sync", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ mode: "reference", reference: referenceToken, target: targetToken }),
-      });
-      const data = (await response.json()) as {
-        offsetMs?: number;
-        confidence?: number;
-        error?: string;
-      };
-      if (response.ok && typeof data.offsetMs === "number") {
-        setOffsetMs(data.offsetMs);
-        setSyncMsg(
-          `Offset ${(data.offsetMs / 1000).toFixed(1)} s · confianza ${Math.round((data.confidence ?? 0) * 100)}%`,
-        );
-      } else {
-        setSyncMsg(data.error ?? "No se pudo sincronizar");
-      }
-    } catch {
-      setSyncMsg("Error de red al sincronizar");
-    } finally {
-      setSyncBusy(false);
-    }
-  };
-
-  runAutoSyncRef.current = () => {
-    void runAutoSync();
-  };
 
   const onKeyDown = (event: ReactKeyboardEvent) => {
     const tag = (event.target as HTMLElement | null)?.tagName;
@@ -900,10 +1099,10 @@ export default function Player({
         setPanel(panel === "subs" ? null : "subs");
         break;
       case "[":
-        if (activeSub) setOffsetMs((value) => Math.round((value - 100) * 10) / 10);
+        nudgeOffset(-100);
         break;
       case "]":
-        if (activeSub) setOffsetMs((value) => Math.round((value + 100) * 10) / 10);
+        nudgeOffset(100);
         break;
       default:
         break;
@@ -1024,21 +1223,38 @@ export default function Player({
 
       <div className="player-shade" aria-hidden />
 
-      {status === "loading" && (
-        <div className="player-center">
+      {(status === "loading" || status === "switching") && (
+        <div className="player-center player-starting" role="status" aria-live="polite">
           <div className="spinner" />
-          <p className="player-hint">
-            {delay.originS != null
-              ? `Conectando · el origen va ~${Math.round(delay.originS)} s detrás`
-              : "Conectando con la señal…"}
+          <p className="player-starting-title">
+            {playedRef.current
+              ? "Recuperando la reproducción…"
+              : live
+                ? delay.originS != null
+                  ? `Conectando · el origen va ~${Math.round(delay.originS)} s detrás`
+                  : "Conectando con la señal…"
+                : `Abriendo ${source?.label ?? "la fuente"}`}
           </p>
-        </div>
-      )}
-
-      {status === "switching" && (
-        <div className="player-center">
-          <div className="spinner" />
-          <p className="player-hint">Cambiando de fuente…</p>
+          <p className="player-hint">
+            {sources.length > 1 ? `Fuente ${sourceIndex + 1} de ${sources.length} · ` : ""}
+            {elapsedS} s
+            {!playedRef.current && sources.length - failed.length > 1 && elapsedS * 1000 < startBudgetMs
+              ? ` · si no arranca, pasa a otra en ${Math.max(0, Math.ceil(startBudgetMs / 1000) - elapsedS)} s`
+              : ""}
+          </p>
+          {status === "switching" && error && <p className="player-hint">{error}. Probando la siguiente.</p>}
+          {source?.p2p && !playedRef.current && elapsedS >= 3 && (
+            <p className="player-hint player-p2p-note">Las fuentes P2P tardan más la primera vez: buscan a quién descargarle.</p>
+          )}
+          {sources.length > 1 && elapsedS * 1000 >= OFFER_SKIP_MS && (
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm player-skip"
+              onClick={() => failover.current("La salteaste")}
+            >
+              Probar otra fuente
+            </button>
+          )}
         </div>
       )}
 
@@ -1052,23 +1268,27 @@ export default function Player({
         <div className="player-overlay">
           <div className="player-error">
             <IconAlert size={26} />
-            <h3>Se cortó la señal</h3>
-            <p>{error ?? "No se pudo reproducir esta fuente."}</p>
+            <h3>{live ? "Se cortó la señal" : sources.length > 1 ? "Ninguna fuente arrancó" : "Esta fuente no arrancó"}</h3>
+            <p>
+              {live
+                ? (error ?? "No se pudo reproducir esta fuente.")
+                : sources.length > 1
+                  ? `Se probaron las ${sources.length}. Suele pasar cuando nadie está compartiendo esas copias en este momento.`
+                  : (error ?? "No se pudo reproducir esta fuente.")}
+            </p>
             <div className="player-error-actions">
               <button
                 className="btn btn-primary btn-sm"
                 onClick={() => {
-                  setRetryNonce((value) => value + 1);
-                  void videoRef.current?.play().catch(() => undefined);
+                  failedRef.current = [];
+                  setFailed([]);
+                  setError(null);
+                  if (sourceIndex === 0) setRetryNonce((value) => value + 1);
+                  else setSourceIndex(0);
                 }}
               >
-                <IconRefresh size={16} /> Reintentar
+                <IconRefresh size={16} /> {sources.length > 1 ? "Probar todas de nuevo" : "Reintentar"}
               </button>
-              {sources.length > 1 && (
-                <button className="btn btn-ghost btn-sm" onClick={() => changeSource((sourceIndex + 1) % sources.length)}>
-                  Otra fuente
-                </button>
-              )}
             </div>
           </div>
         </div>
@@ -1207,20 +1427,22 @@ export default function Player({
                   className={`panel-item ${index === sourceIndex ? "is-active" : ""}`}
                   onClick={() => changeSource(index)}
                 >
-                  <span>
-                    {index + 1}. {item.label}
-                  </span>
+                  <span>{item.label}</span>
                   <small>
-                    {item.height ? `${item.height}p · ` : ""}
-                    {item.edgeAgeS != null ? `${Math.round(item.edgeAgeS)} s` : "sin medir"}
-                    {item.score != null ? ` · score ${item.score}` : ""}
+                    {failed.includes(index)
+                      ? "No arrancó"
+                      : index === sourceIndex
+                        ? "En pantalla"
+                        : live && item.edgeAgeS != null
+                          ? `${Math.round(item.edgeAgeS)} s de delay`
+                          : item.p2p
+                            ? "P2P"
+                            : ""}
                   </small>
                 </button>
               ))}
             </div>
-            <p className="panel-note">
-              Fubol prueba las fuentes en paralelo y cambia sola si la actual se cae.
-            </p>
+            <p className="panel-note">Si la fuente en pantalla no arranca o se corta, Fubol pasa sola a la siguiente.</p>
           </div>
         )}
 
@@ -1247,37 +1469,42 @@ export default function Player({
                     setActiveSub(track.id);
                   }}
                 >
-                  <span>
-                    {track.lang.toUpperCase()} · {track.label}
-                  </span>
-                  <small>{track.id.includes("forced") ? "forzados" : track.id.slice(0, 28)}</small>
+                  <span>{track.label}</span>
+                  {track.forced && <small>Solo carteles y diálogos en otro idioma</small>}
                 </button>
               ))}
             </div>
 
             {activeSub && (
               <>
-                <div className="offset-row">
-                  <button className="btn btn-ghost btn-xs" onClick={() => setOffsetMs((value) => value - 1000)}>
-                    -1 s
+                <p className="sync-status">{describeSync(syncMethod, measuring, offsetMs)}</p>
+                <div className="offset-row" role="group" aria-label="Corregir el tiempo del subtítulo">
+                  <button type="button" className="btn btn-ghost btn-xs" onClick={() => nudgeOffset(-1000)} aria-label="Subtítulos 1 segundo antes">
+                    −1 s
                   </button>
-                  <button className="btn btn-ghost btn-xs" onClick={() => setOffsetMs((value) => Math.round((value - 100) * 10) / 10)}>
-                    -0.1 s
+                  <button type="button" className="btn btn-ghost btn-xs" onClick={() => nudgeOffset(-100)} aria-label="Subtítulos una décima antes">
+                    −0,1
                   </button>
-                  <span className="offset-value">{(offsetMs / 1000).toFixed(1)} s</span>
-                  <button className="btn btn-ghost btn-xs" onClick={() => setOffsetMs((value) => Math.round((value + 100) * 10) / 10)}>
-                    +0.1 s
+                  <span className="offset-value" aria-live="polite">
+                    {offsetMs > 0 ? "+" : offsetMs < 0 ? "−" : ""}
+                    {(Math.abs(offsetMs) / 1000).toFixed(1).replace(".", ",")} s
+                  </span>
+                  <button type="button" className="btn btn-ghost btn-xs" onClick={() => nudgeOffset(100)} aria-label="Subtítulos una décima después">
+                    +0,1
                   </button>
-                  <button className="btn btn-ghost btn-xs" onClick={() => setOffsetMs((value) => value + 1000)}>
+                  <button type="button" className="btn btn-ghost btn-xs" onClick={() => nudgeOffset(1000)} aria-label="Subtítulos 1 segundo después">
                     +1 s
                   </button>
-                  <button className="btn btn-ghost btn-xs" onClick={() => setOffsetMs(0)}>
-                    reset
-                  </button>
                 </div>
-                <button className="btn btn-primary btn-sm" disabled={syncBusy} onClick={() => void runAutoSync()}>
-                  <IconSpark size={15} /> {syncBusy ? "Sincronizando…" : "Sincronizar automático"}
-                </button>
+                <p className="panel-note">
+                  Si el texto aparece antes de que hablen, tocá <strong>+</strong>; si aparece tarde, <strong>−</strong>.
+                  El ajuste queda guardado para esta copia en todos los dispositivos.
+                </p>
+                {syncMethod === "manual" && (
+                  <button type="button" className="btn btn-ghost btn-sm" onClick={backToAutomatic}>
+                    <IconSpark size={15} /> Volver al ajuste automático
+                  </button>
+                )}
                 {syncMsg && <p className="panel-note">{syncMsg}</p>}
               </>
             )}
@@ -1307,9 +1534,10 @@ export default function Player({
         )}
       </div>
     </div>
+    {belowPlayer}
     {mode === "vod" && <div className="learning-wrapper">
       <button type="button" className="btn btn-ghost btn-sm" aria-expanded={learningOpen} onClick={() => setLearningOpen((open) => !open)}>
-        {learningOpen ? "Close English practice" : "Learn English"}
+        {learningOpen ? "Cerrar práctica de inglés" : "Practicar inglés con esta película"}
       </button>
       {learningOpen && <LearningPanel title={title ?? "Untitled"} storageKey={storageKey} subtitles={subtitles} current={current} activeSubtitleId={activeSub} activeSubtitleOffsetMs={offsetMs} video={videoRef.current} />}
     </div>}

@@ -2,13 +2,21 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import TitleHero from "@/components/TitleHero";
 import VodWatch from "@/components/VodWatch";
-import { IconAlert } from "@/components/icons";
+import { IconAlert, IconPlay } from "@/components/icons";
 import { requirePageSession } from "@/lib/auth";
 import { withTimeout } from "@/lib/http";
 import { getVodMeta } from "@/lib/vod/service";
 import { listProgress } from "@/lib/state/progress";
 
 export const dynamic = "force-dynamic";
+
+function formatClock(seconds: number): string {
+  const total = Math.floor(seconds);
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return h > 0 ? `${h}:${pad(m)}:${pad(total % 60)}` : `${m}:${pad(total % 60)}`;
+}
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
   const { id } = await params;
@@ -44,7 +52,15 @@ export default async function MoviePage({ params }: { params: Promise<{ id: stri
         description={meta?.description ?? undefined}
         tags={meta?.genres}
         credits={credits}
-      />
+      >
+        {/* The player sits below the fold on a laptop: one press takes you there. */}
+        <div className="title-actions">
+          <a href="#ver-ahora" className="btn btn-primary">
+            <IconPlay size={16} />
+            {resumeFrom > 60 ? `Seguir desde ${formatClock(resumeFrom)}` : "Ver ahora"}
+          </a>
+        </div>
+      </TitleHero>
       {meta?.sourceNotice && <p className="watch-note">{meta.sourceNotice}{meta.sourcePage?.startsWith("https://archive.org/details/") && <> <a className="section-link" href={meta.sourcePage} target="_blank" rel="noopener noreferrer">Ver copia original ↗</a></>}</p>}
 
       {!meta && (
@@ -62,12 +78,9 @@ export default async function MoviePage({ params }: { params: Promise<{ id: stri
         </div>
       )}
 
-      <div className="title-body">
+      <div className="title-body" id="ver-ahora">
         <div className="section-head">
-          <div>
-            <h2>Ver ahora</h2>
-            <p>Fuentes compatibles y subtítulos seleccionables. Se prioriza una pista de la misma copia cuando existe.</p>
-          </div>
+          <h2>Ver ahora</h2>
         </div>
         <VodWatch
           type="movie"
