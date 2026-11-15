@@ -8,6 +8,7 @@ import { recentChecks } from "@/lib/metrics";
 import { storageInfo, readState } from "@/lib/state";
 import { egressInfo } from "@/lib/egress";
 import { resolverStatus, syncTorrentServerSettings } from "@/lib/vod/torrent";
+import { subsyncStatus } from "@/lib/subs/sidecar";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -97,6 +98,8 @@ export const GET = route("admin_health", async () => {
     storage: storageInfo(),
     network: await egressInfo(),
     resolver: await resolverStatus(),
+    /** The sidecar that aligns subtitles against the film's audio. */
+    subsync: await subsyncStatus(),
     /** Titles whose subtitles were already aligned against the audio. */
     alignedTitles: Object.keys(doc.sync).length,
   });

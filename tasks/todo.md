@@ -1,6 +1,21 @@
 # Fubol — estado de ejecución
 
-Actualizado: 2026-11-10
+Actualizado: 2026-11-15
+
+## Todos los addons entregando (2026-11-15) — rama `addons-todos-entregando`, falta merge a main
+- [x] **Comet, MediaFusion y Meteor estaban instalados y mudos**: los tres responden (1.006, 25 y 154 fuentes para una película), pero la app cortaba la lista concatenada en 40 y solo quedaban las de Torrentio. Ahora se toma por turnos de cada addon (`interleaveByAddon`): 3 fuentes de cada uno en película y en serie, verificado en local.
+- [x] **Bug grave del resolver**: todas las películas remuxeadas compartían la sesión `/hlsv2/fubol/`, y el servidor contestaba con la playlist de la película que estuviera abierta (medido: pedí una y devolvió otra). Ahora hay una sesión por archivo (`/hlsv2/<hash>-<idx>/`), así dos pantallas no se pisan.
+- [x] **Fuentes sin índice de archivo**: 206 de 500 en Torrentio, 675 de 1.006 en Comet y todas las de MediaFusion no traen `fileIdx`. Se asumía el archivo 0 (a veces un .txt o un sample); ahora se manda `-1` y el servidor elige el video, como hace Stremio. En series, un pack de temporada sin índice se descarta salvo que el nombre diga el episodio pedido.
+- [x] El mismo torrent listado por dos addons cuenta una sola vez (antes, además, todas las fuentes HLS se colapsaban en una porque la clave ignoraba el query).
+- [x] **El sincronizador por audio estaba caído en producción**: su túnel ya no existía y `SUBSYNC_URL` apuntaba a una dirección muerta. La dirección ahora vive en el estado (`/api/admin/subsync`), la publica `scripts/subsync-publish.mjs` con un token nuevo cada vez, y el lanzador y el watchdog la reponen solos. El sidecar rechaza pedidos sin token (401).
+- [x] **Diagnóstico honesto por addon**: el panel muestra cuántas fuentes o pistas entregó cada addon para una película de prueba y marca "responde pero no entrega" con el error. Salud muestra el estado del sincronizador.
+- [x] `node scripts/doctor.mjs`: chequeo de punta a punta contra la app, addon por addon.
+- [x] Los túneles viejos se cortan al republicar (antes quedaban procesos `cloudflared` huérfanos).
+- [x] **213 tests** en verde (typecheck + lint + vitest). Reproducción real por el proxy local: Torrentio (MP4, 206) y Meteor (HLS: playlist + segmento de 1,2 MB).
+- [ ] **Falta el merge a main** para que llegue a producción; después, un clic en el lanzador publica el sincronizador.
+- [ ] OpenSubtitles PRO: el servidor del addon contesta 500/502 a los pedidos de subtítulos (probado directo, sin pasar por la app). No es configuración nuestra; el panel ahora lo dice.
+- [ ] SubSource: sigue pidiendo un captcha a mano para crear la cuenta.
+- [ ] Las fuentes de Comet y MediaFusion no informan seeders: algunas son enjambres muertos y el reproductor recién pasa a la siguiente al agotar la espera.
 
 ## Última pasada: que nada se rompa en silencio (2026-11-10, noche)
 - [x] **El resolver caído ahora se dice**: la app consulta si el resolver responde y, cuando no, el título explica "El servidor que abre los torrents no responde" en vez de "sin fuentes". El panel → Salud muestra el estado del resolver, la IP de salida y cuántos títulos ya están alineados.

@@ -17,6 +17,7 @@ from the subtitle timings, then finds the shift that best correlates them.
 
 from __future__ import annotations
 
+import hmac
 import json
 import logging
 import os
@@ -37,6 +38,11 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 EXTRACT_TIMEOUT_S = int(os.environ.get("SUBSYNC_EXTRACT_TIMEOUT", "200"))
 ALIGN_TIMEOUT_S = int(os.environ.get("SUBSYNC_TIMEOUT", "60"))
 MAX_SUBTITLE_BYTES = 4 * 1024 * 1024
+
+# Shared secret for the published sidecar. Behind a public tunnel, anyone who
+# finds the address could otherwise make this service download audio for them.
+# Unset (the Docker network case, where only the app can reach it) means open.
+TOKEN = os.environ.get("SUBSYNC_TOKEN", "").strip()
 
 # Seconds of audio decoded for the alignment. Ten minutes of dialogue is
 # plenty to lock a constant offset, and the cap is what keeps a feature film
@@ -248,6 +254,11 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:  # noqa: N802
         if self.path.rstrip("/") != "/align":
             self._send(404, {"error": "not found"})
+            return
+        if TOKEN and not hmac.compare_digest(
+            self.headers.get("authorization", "").encode("utf-8"), f"Bearer {TOKEN}".encode("utf-8")
+        ):
+            self._send(401, {"error": "No autorizado"})
             return
         try:
             length = int(self.headers.get("content-length") or 0)

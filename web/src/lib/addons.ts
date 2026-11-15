@@ -111,6 +111,8 @@ export interface RawAddonStream {
     bingeGroup?: string;
     filename?: string;
     videoSize?: number;
+    /** Stated by some addons (Meteor) instead of being written in the text. */
+    seeders?: number;
     proxyHeaders?: { request?: Record<string, string>; response?: Record<string, string> };
   };
 }

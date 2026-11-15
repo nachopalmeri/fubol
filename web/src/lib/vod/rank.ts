@@ -1,5 +1,5 @@
 import type { AddonRef, RawAddonStream } from "../addons";
-import { looksWebPlayable, resolveTorrentHlsUrl, resolveTorrentUrl, webPlayableBonus } from "./torrent";
+import { looksWebPlayable, resolveTorrentHlsUrl, resolveTorrentUrl, torrentKeyOf, webPlayableBonus } from "./torrent";
 
 export interface VodSource {
   id: string;
@@ -75,7 +75,30 @@ function scoreSource(source: Omit<VodSource, "score">): number {
   return Math.round(score);
 }
 
-export function normalizeStreams(addon: AddonRef, streams: RawAddonStream[]): VodSource[] {
+export interface EpisodeRef {
+  season: number;
+  episode: number;
+}
+
+/** `tt0903747:1:1` → season 1, episode 1. Other id shapes carry no episode. */
+export function episodeOf(type: string, id: string): EpisodeRef | undefined {
+  if (type !== "series") return undefined;
+  const match = /^tt\d+:(\d+):(\d+)$/.exec(id);
+  if (!match?.[1] || !match[2]) return undefined;
+  return { season: Number(match[1]), episode: Number(match[2]) };
+}
+
+/** Whether a release name says it is this very episode (S01E01, 1x01). */
+export function namesEpisode(text: string, ref: EpisodeRef): boolean {
+  const pattern = `s0*${ref.season}[\\s._-]*e0*${ref.episode}(?!\\d)|(?<!\\d)${ref.season}x0*${ref.episode}(?!\\d)`;
+  return new RegExp(pattern, "i").test(text);
+}
+
+export function normalizeStreams(
+  addon: AddonRef,
+  streams: RawAddonStream[],
+  options: { episode?: EpisodeRef } = {},
+): VodSource[] {
   const sources: VodSource[] = [];
   for (const [index, stream] of streams.entries()) {
     const title = stream.title || stream.name || "Fuente";
@@ -91,9 +114,25 @@ export function normalizeStreams(addon: AddonRef, streams: RawAddonStream[]): Vo
     let viaTorrent = false;
     let transcoded = false;
     if (!url && stream.infoHash) {
+      // A season pack without a file index gives no way to find the episode:
+      // the server would pick the largest file, which is some other chapter.
+      // Offering it would play the wrong one, so it is left out unless the
+      // release itself is named after the episode that was asked for.
+      if (
+        options.episode &&
+        !Number.isInteger(stream.fileIdx) &&
+        !namesEpisode(haystack, options.episode)
+      ) {
+        continue;
+      }
       // A release the browser can decode is served as it is; the rest needs
       // the server to remux it to HLS.
-      const plain = looksWebPlayable(haystack) ? resolveTorrentUrl(stream.infoHash, stream.fileIdx) : null;
+      // Without a file index the server picks the file, and the release name
+      // is then all there is to go on: unless it says MP4 outright, the safe
+      // form is the remux, which plays whatever the container turns out to be.
+      const knownFile = Number.isInteger(stream.fileIdx) || /\bmp4\b|\bm4v\b|\bwebm\b/i.test(haystack);
+      const plain =
+        knownFile && looksWebPlayable(haystack) ? resolveTorrentUrl(stream.infoHash, stream.fileIdx) : null;
       const hls = plain ? null : resolveTorrentHlsUrl(stream.infoHash, stream.fileIdx);
       const resolved = plain ?? hls;
       if (!resolved) continue;
@@ -129,7 +168,15 @@ export function normalizeStreams(addon: AddonRef, streams: RawAddonStream[]): Vo
     };
     // A swarm-backed file only plays as well as its seeders and container, so
     // a well-seeded MP4/H.264 release outranks a bigger one that may stall.
-    const score = scoreSource(base) + (viaTorrent ? webPlayableBonus(haystack) : 0);
+    // Some addons state the seeders as a field instead of in the text.
+    const seeders = stream.behaviorHints?.seeders;
+    const seedBonus =
+      viaTorrent && typeof seeders === "number" && seeders > 0 && !haystack.includes("👤")
+        ? Math.min(10, seeders / 50)
+        : 0;
+    // Two decimals: enough to order by seeders without float noise in the API.
+    const score =
+      Math.round((scoreSource(base) + (viaTorrent ? webPlayableBonus(haystack) : 0) + seedBonus) * 100) / 100;
     sources.push({ ...base, score });
   }
   return sources.sort((a, b) => b.score - a.score);
@@ -139,10 +186,47 @@ export function dedupeSources(sources: VodSource[]): VodSource[] {
   const seen = new Set<string>();
   const out: VodSource[] = [];
   for (const source of sources) {
-    const key = `${source.url.split("?")[0]}`;
+    // Two addons often index the same torrent: the same file is one source,
+    // and the HLS form keeps the file in the query, not in the path.
+    const key = (source.viaTorrent ? torrentKeyOf(source.url) : null) ?? `${source.url.split("?")[0]}`;
     if (seen.has(key)) continue;
     seen.add(key);
     out.push(source);
   }
   return out;
+}
+
+/**
+ * Takes sources from every addon in turn instead of from the first one.
+ *
+ * Each addon answers a popular film with hundreds of torrents (measured: 500
+ * from Torrentio, 1006 from Comet, 154 from Meteor). Cutting the concatenated
+ * list kept only the first addon's results, so the other three were installed,
+ * answering, and never offered. Different addons index different swarms, and a
+ * second swarm is exactly what the player needs when the first one stalls.
+ *
+ * The input keeps each addon's own order (best first); the output is ordered
+ * by score.
+ */
+export function interleaveByAddon(sources: VodSource[], limit: number): VodSource[] {
+  const queues = new Map<string, VodSource[]>();
+  for (const source of sources) {
+    const queue = queues.get(source.addonId);
+    if (queue) queue.push(source);
+    else queues.set(source.addonId, [source]);
+  }
+  const lists = [...queues.values()];
+  const picked: VodSource[] = [];
+  for (let round = 0; picked.length < limit; round++) {
+    let took = false;
+    for (const list of lists) {
+      const source = list[round];
+      if (!source) continue;
+      took = true;
+      picked.push(source);
+      if (picked.length >= limit) break;
+    }
+    if (!took) break;
+  }
+  return picked.sort((a, b) => b.score - a.score);
 }

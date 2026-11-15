@@ -8,6 +8,7 @@ import { subdir } from "../env";
 import { detectFormat, decodeSubtitle, toVtt } from "./format";
 import { subtitleProviders } from "../vod/service";
 import { getOpenFilm } from "../vod/open-films";
+import { subsyncTarget } from "./sidecar";
 
 export interface SubtitleOption {
   id: string;
@@ -176,13 +177,18 @@ export async function audioSync(
   subtitleUrl: string,
   videoUrl: string,
 ): Promise<AudioSyncResult> {
-  const base = process.env.SUBSYNC_URL?.trim().replace(/\/+$/, "");
-  if (!base) {
-    throw new Error("Sync por audio no configurado (SUBSYNC_URL)");
+  // The address is read on every call: the sidecar sits behind a tunnel that
+  // is republished with a new address whenever the machine restarts.
+  const target = await subsyncTarget();
+  if (!target) {
+    throw new UpstreamError("El sync por audio no está configurado.", 503);
   }
-  const res = await fetch(`${base}/align`, {
+  const res = await fetch(`${target.base}/align`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: {
+      "content-type": "application/json",
+      ...(target.token ? { authorization: `Bearer ${target.token}` } : {}),
+    },
     body: JSON.stringify({ subtitle_url: subtitleUrl, video_url: videoUrl }),
     // The sidecar has to pull real audio down before it can align anything,
     // and the source is the bottleneck: the same film answered a four-minute

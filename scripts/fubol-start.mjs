@@ -9,10 +9,12 @@
  *   2. levanta el resolver de torrents y el sidecar de sincronización;
  *   3. publica el resolver en internet y avisa a la app la dirección nueva
  *      (solo si no está contestando: si todo va bien no se toca la URL);
- *   4. deja el vigilante corriendo para que se reponga solo;
- *   5. abre el navegador en la app, ya con la sesión de la familia.
+ *   4. publica el sincronizador de subtítulos si la app no lo alcanza;
+ *   5. deja el vigilante corriendo para que se reponga solo;
+ *   6. abre el navegador en la app, ya con la sesión de la familia.
  *
- *   node scripts/fubol-start.mjs
+ *   node scripts/fubol-start.mjs            # todo y abre la app
+ *   node scripts/fubol-start.mjs --no-open  # todo, sin abrir el navegador
  */
 import { spawn, spawnSync, execFileSync, execFile } from "node:child_process";
 import fs from "node:fs";
@@ -138,6 +140,34 @@ function publishResolver(password) {
   return result.status === 0;
 }
 
+/** Does the app reach the subtitle sidecar? */
+async function subsyncAlive(password) {
+  try {
+    const login = await fetch(`${APP_URL}/api/auth/admin`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ password }),
+    });
+    if (!login.ok) return false;
+    const cookie = (login.headers.getSetCookie?.() ?? []).map((c) => c.split(";")[0]).join("; ");
+    const res = await fetch(`${APP_URL}/api/admin/subsync`, { headers: { cookie } });
+    if (!res.ok) return false;
+    return (await res.json()).reachable === true;
+  } catch {
+    return false;
+  }
+}
+
+function publishSubsync(password) {
+  say("publicando el sincronizador de subtítulos…");
+  const result = spawnSync("node", [path.join(ROOT, "scripts", "subsync-publish.mjs")], {
+    cwd: ROOT,
+    env: { ...process.env, FUBOL_ADMIN_PASSWORD: password },
+    stdio: "inherit",
+  });
+  return result.status === 0;
+}
+
 function watchdogRunning() {
   const out = tryRun("wmic", ["process", "where", "name='node.exe'", "get", "CommandLine"]);
   if (out) return out.includes("resolver-watchdog");
@@ -185,6 +215,14 @@ if (await resolverAlive(password)) {
   process.exit(1);
 }
 
+// The sidecar is a nicety: subtitles still align against another track
+// without it, so a failure here must not stop the family from watching.
+if (await subsyncAlive(password)) {
+  say("el sincronizador ya responde");
+} else if (!publishSubsync(password)) {
+  say("aviso: no pude publicar el sincronizador; los subtítulos se alinean igual contra otra pista");
+}
+
 startWatchdog(password);
-openApp();
+if (!process.argv.includes("--no-open")) openApp();
 say("todo listo. Para terminar el día: cerrá esta ventana o la máquina cuando quieras.");

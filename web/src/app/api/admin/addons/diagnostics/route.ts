@@ -37,7 +37,9 @@ export const GET = route("admin_addon_diagnostics", async () => {
     stale,
     summary: {
       total: reported.length,
-      serving: reported.filter((addon) => addon.manifestOk && !addon.needsConfiguration).length,
+      serving: reported.filter((addon) => addon.manifestOk && !addon.needsConfiguration && addon.served !== 0).length,
+      /** Healthy manifest, configured, and still nothing for a known title. */
+      silent: reported.filter((addon) => addon.manifestOk && !addon.needsConfiguration && addon.served === 0).length,
       needConfiguration: reported.filter((addon) => addon.needsConfiguration).length,
       unreachable: reported.filter((addon) => !addon.manifestOk).length,
     },

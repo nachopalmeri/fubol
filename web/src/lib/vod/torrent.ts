@@ -127,9 +127,48 @@ export async function syncTorrentServerSettings(): Promise<void> {
 export function resolveTorrentHlsUrl(infoHash: string | undefined, fileIdx: number | undefined): string | null {
   const base = torrentServerBase();
   if (!base || !infoHash || !INFO_HASH.test(infoHash)) return null;
-  const index = Number.isInteger(fileIdx) && (fileIdx as number) >= 0 ? (fileIdx as number) : 0;
-  const media = `${torrentServerMediaBase()}/${infoHash.toLowerCase()}/${index}`;
-  return `${base}/hlsv2/fubol/video0.m3u8?mediaURL=${encodeURIComponent(media)}&profile=h264&maxWidth=1280`;
+  const hash = infoHash.toLowerCase();
+  const index = torrentFileIndex(fileIdx);
+  const media = `${torrentServerMediaBase()}/${hash}/${index}`;
+  // The path segment after `hlsv2` names the transcoding session, and the
+  // server keeps answering from a live session whatever `mediaURL` says. With
+  // one fixed name for every title, asking for a film while another was still
+  // open returned the other film's playlist (measured against
+  // stremio/server 4.22.5). One session per file keeps two screens of the
+  // house, or one screen changing title, from stepping on each other.
+  const session = `${hash}-${index < 0 ? "auto" : index}`;
+  return `${base}/hlsv2/${session}/video0.m3u8?mediaURL=${encodeURIComponent(media)}&profile=h264&maxWidth=1280`;
+}
+
+/**
+ * Which file of the torrent to serve.
+ *
+ * Many results carry no `fileIdx` (measured: 206 of 500 from Torrentio, 675
+ * of 1006 from Comet, every MediaFusion movie). Assuming the first file is
+ * wrong whenever the torrent starts with a sample or a text file; `-1` asks
+ * the streaming server to pick the largest video itself, which is what
+ * Stremio sends in the same situation.
+ */
+export function torrentFileIndex(fileIdx: number | undefined): number {
+  return Number.isInteger(fileIdx) && (fileIdx as number) >= 0 ? (fileIdx as number) : -1;
+}
+
+/**
+ * The torrent file a resolver URL points at, as `hash/index`.
+ *
+ * The plain URL carries it in the path and the HLS one inside `mediaURL`, so
+ * comparing URLs as text cannot tell that two entries are the same file.
+ */
+export function torrentKeyOf(url: string): string | null {
+  let text = url;
+  try {
+    text = decodeURIComponent(url);
+  } catch {
+    // A malformed escape: fall back to the raw text.
+  }
+  // The session segment repeats the hash; the file is the one in the media path.
+  const match = /([0-9a-f]{40})\/(-?\d+)(?![0-9a-f])/i.exec(text.replace(/\/hlsv2\/[^/]+\//, "/hlsv2/"));
+  return match?.[1] && match[2] ? `${match[1].toLowerCase()}/${match[2]}` : null;
 }
 
 export function torrentResolverEnabled(): boolean {
@@ -146,8 +185,7 @@ const INFO_HASH = /^[0-9a-f]{40}$/i;
 export function resolveTorrentUrl(infoHash: string | undefined, fileIdx: number | undefined): string | null {
   const base = torrentServerBase();
   if (!base || !infoHash || !INFO_HASH.test(infoHash)) return null;
-  const index = Number.isInteger(fileIdx) && (fileIdx as number) >= 0 ? (fileIdx as number) : 0;
-  return `${base}/${infoHash.toLowerCase()}/${index}`;
+  return `${base}/${infoHash.toLowerCase()}/${torrentFileIndex(fileIdx)}`;
 }
 
 /**

@@ -2,6 +2,7 @@ import { cacheGet, cacheSet } from "../cache";
 import { mapLimit, withTimeout } from "../http";
 import {
   configureUrlFor,
+  getAddonSubtitles,
   getCatalog,
   getManifest,
   getMeta,
@@ -13,7 +14,7 @@ import {
   type AddonCatalog,
 } from "../addons";
 import { listAddonRows, type AddonRow } from "./store";
-import { dedupeSources, normalizeStreams, type VodSource } from "./rank";
+import { dedupeSources, episodeOf, interleaveByAddon, normalizeStreams, type VodSource } from "./rank";
 import { syncTorrentServerSettings, torrentServerBase, resolverStatus } from "./torrent";
 import { filterAvailable, validateVodSource } from "./availability";
 import { shortHash } from "../crypto";
@@ -267,6 +268,7 @@ export async function getVodStreams(type: string, id: string): Promise<VodStream
   const openFilm = type === "movie" ? await getOpenFilm(id) : null;
   const addons = await listAddonRows("vod");
   const unconfigured: { name: string; configureUrl: string | null }[] = [];
+  const episode = episodeOf(type, id);
   const results = await mapLimit(addons, 5, async (addon) => {
     try {
       const manifest = await getManifest(addon.url);
@@ -277,16 +279,21 @@ export async function getVodStreams(type: string, id: string): Promise<VodStream
       }
       const streams = await withTimeout(getStreams(addon, type, id), 20000, "streams lentos");
       const p2p = streams.filter((stream) => !stream.url && stream.infoHash).length;
-      return { sources: normalizeStreams(addon, streams), p2p };
+      return { sources: normalizeStreams(addon, streams, { episode }), p2p };
     } catch {
       return { sources: [] as VodSource[], p2p: 0 };
     }
   });
   return {
-    sources: dedupeSources([
-      ...(openFilm?.sources ?? []),
-      ...results.flatMap((result) => result.sources),
-    ]).slice(0, 40),
+    // Every addon gets its turn: cutting the plain concatenation kept only
+    // the first addon's torrents, and the rest were never offered.
+    sources: interleaveByAddon(
+      dedupeSources([
+        ...(openFilm?.sources ?? []),
+        ...results.flatMap((result) => result.sources),
+      ]),
+      40,
+    ),
     addonsTried: addons.length + (openFilm ? 1 : 0),
     p2pOnly: results.reduce((total, result) => total + result.p2p, 0),
     unconfigured,
@@ -392,7 +399,7 @@ async function probeVodAddons(
       const manifest = await getManifest(addon.url);
       if (!supports(manifest, "stream")) return { addon, direct: [] as VodSource[], p2p: 0 };
       const streams = await withTimeout(getStreams(addon, type, id), 12_000, "streams lentos");
-      const direct = normalizeStreams(addon, streams).filter((source) => !source.viaTorrent);
+      const direct = normalizeStreams(addon, streams, { episode: episodeOf(type, id) }).filter((source) => !source.viaTorrent);
       const p2p = streams.filter((stream) => !stream.url && stream.infoHash).length;
       if (direct.length > 0) directCapable.add(addon.id);
       if (p2p > 0) p2pCapable.add(addon.id);
@@ -435,7 +442,9 @@ export async function getPlayableVodStreams(type: string, id: string): Promise<V
     sources.push(item.source);
     kinds[item.source.id] = item.kind;
   }
-  for (const source of torrents.slice(0, 8)) {
+  // A dozen, taken across addons: each one indexes other swarms, and the
+  // player needs somewhere else to go when a swarm has no seeders left.
+  for (const source of interleaveByAddon(torrents, 12)) {
     sources.push(source);
     kinds[source.id] = "mp4";
   }
@@ -484,6 +493,41 @@ export interface AddonDiagnostic {
   configureUrl: string | null;
   resources: string[];
   error?: string;
+  /**
+   * What the addon returned for a well-known title: streams for a video
+   * addon, tracks for a subtitle one. `null` when it was not asked (catalog
+   * addons, or one that still needs configuring). Zero with a healthy
+   * manifest is the case the manifest check cannot see.
+   */
+  served: number | null;
+  /** Why the request for that title failed, when it did. */
+  serveError?: string;
+}
+
+/** A film every provider indexes, used to ask an addon for something real. */
+const PROBE_TITLE = { type: "movie", id: "tt0111161" } as const;
+
+async function probeServed(
+  addon: AddonRow,
+  resources: string[],
+): Promise<{ served: number | null; serveError?: string }> {
+  try {
+    if (addon.kind === "vod" && resources.includes("stream")) {
+      const streams = await withTimeout(getStreams(addon, PROBE_TITLE.type, PROBE_TITLE.id), 15_000, "streams lentos");
+      return { served: streams.filter((stream) => stream.url || stream.infoHash).length };
+    }
+    if (addon.kind === "subs" && resources.includes("subtitles")) {
+      const tracks = await withTimeout(
+        getAddonSubtitles(addon, PROBE_TITLE.type, PROBE_TITLE.id),
+        15_000,
+        "subtítulos lentos",
+      );
+      return { served: tracks.length };
+    }
+    return { served: null };
+  } catch (error) {
+    return { served: 0, serveError: error instanceof Error ? error.message : "error" };
+  }
 }
 
 /**
@@ -504,13 +548,18 @@ export async function addonDiagnostics(): Promise<AddonDiagnostic[]> {
     };
     try {
       const manifest = await withTimeout(getManifest(addon.url), 10_000, "manifest lento");
+      const resources = (manifest.resources ?? []).map((resource) =>
+        typeof resource === "string" ? resource : resource.name,
+      );
+      const unconfigured = needsConfiguration(manifest);
       return {
         ...base,
         manifestOk: true,
-        needsConfiguration: needsConfiguration(manifest),
-        resources: (manifest.resources ?? []).map((resource) =>
-          typeof resource === "string" ? resource : resource.name,
-        ),
+        needsConfiguration: unconfigured,
+        resources,
+        // An addon that says it is not configured answers 404 to everything:
+        // asking it would only spend a timeout to learn what it already said.
+        ...(unconfigured ? { served: null } : await probeServed(addon, resources)),
       };
     } catch (error) {
       return {
@@ -518,6 +567,7 @@ export async function addonDiagnostics(): Promise<AddonDiagnostic[]> {
         manifestOk: false,
         needsConfiguration: false,
         resources: [],
+        served: null,
         error: error instanceof Error ? error.message : "error",
       };
     }

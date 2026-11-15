@@ -18,14 +18,14 @@
  * La contraseña de administrador sale de FUBOL_ADMIN_PASSWORD; si no está, se
  * pide. No se imprime.
  */
-import { spawn, execFileSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import readline from "node:readline";
+import { startQuickTunnel, stopTunnelsFor } from "./lib/tunnel.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
 const CONFIG_DIR = path.join(ROOT, "config", "torrserver");
-const CLOUDFLARED = path.join(ROOT, "tools", "cloudflared.exe");
 const IMAGE = "stremio/server:v4.22.5";
 const CONTAINER = "fubol-torrserver";
 const LOCAL_PORT = 11470;
@@ -112,56 +112,9 @@ function ensureContainer() {
 }
 
 async function startTunnel(detach) {
-  if (!fs.existsSync(CLOUDFLARED)) {
-    throw new Error(
-      `falta cloudflared. Descargalo de https://github.com/cloudflare/cloudflared/releases a ${CLOUDFLARED}`,
-    );
-  }
-  const child = spawn(CLOUDFLARED, ["tunnel", "--url", `http://127.0.0.1:${LOCAL_PORT}`, "--no-autoupdate"], {
-    stdio: ["ignore", "pipe", "pipe"],
-    detached: detach,
-  });
-  const url = await new Promise((resolve, reject) => {
-    let buffer = "";
-    let settled = false;
-    const finish = (fn) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      fn();
-    };
-    const onData = (chunk) => {
-      buffer += chunk.toString();
-      const match = /https:\/\/[a-z0-9-]+\.trycloudflare\.com/.exec(buffer);
-      if (match) finish(() => resolve(match[0]));
-    };
-    // Si el túnel no llega a tiempo, el proceso tampoco puede quedar vivo:
-    // un cloudflared huérfano crea otro túnel que nadie vuelve a mirar.
-    const fail = (error) => finish(() => {
-      child.kill();
-      reject(error);
-    });
-    // Cloudflare a veces tarda más de un minuto en asignar el nombre del
-    // túnel cuando hay congestión. Dos minutos evita que el acceso de un clic
-    // falle justo cuando la familia lo necesita.
-    const timer = setTimeout(
-      () => fail(new Error("el túnel no dio una URL a tiempo")),
-      120000,
-    );
-    child.stderr.on("data", onData);
-    child.stdout.on("data", onData);
-    child.on("error", fail);
-    child.on("exit", (code) => fail(new Error(`el túnel terminó con código ${code}`)));
-  });
-  if (detach) {
-    // The tunnel has to outlive this script: a quick tunnel without a process
-    // behind it dies with the shell and leaves the app pointing at a dead
-    // address.
-    child.unref();
-    child.stdout.destroy();
-    child.stderr.destroy();
-  }
-  return { child, url };
+  // El túnel anterior ya no le sirve a nadie: la app va a usar la URL nueva.
+  stopTunnelsFor(LOCAL_PORT);
+  return startQuickTunnel(LOCAL_PORT, { detach });
 }
 
 async function publish(url) {
@@ -200,5 +153,5 @@ if (!process.argv.includes("--detach")) {
   });
   await new Promise(() => {});
 } else {
-  say("El túnel quedó detachmentado: sobrevive a la salida de este script.");
+  say("El túnel quedó desprendido: sobrevive a la salida de este script.");
 }

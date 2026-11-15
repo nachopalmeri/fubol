@@ -66,6 +66,7 @@ interface HealthData {
     note: string;
   };
   resolver?: { configured: boolean; reachable: boolean; url: string | null };
+  subsync?: { configured: boolean; reachable: boolean; url: string | null };
   alignedTitles?: number;
 }
 
@@ -89,6 +90,9 @@ interface AddonDiagnostic {
   configureUrl: string | null;
   resources: string[];
   error?: string;
+  /** Streams or tracks returned for a well-known title; null when not asked. */
+  served?: number | null;
+  serveError?: string;
 }
 
 const TABS: { id: Tab; label: string }[] = [
@@ -1080,12 +1084,26 @@ export default function AdminPanel({ initialTab = "links" }: { initialTab?: Admi
                           {diag?.needsConfiguration && (
                             <span className="tag tag-off">pide configuración</span>
                           )}
-                          {diag?.manifestOk && !diag.needsConfiguration && (
-                            <span className="tag tag-on">ok</span>
+                          {diag?.manifestOk && !diag.needsConfiguration && diag.served !== 0 && (
+                            <span className="tag tag-on">
+                              {typeof diag.served === "number"
+                                ? `ok · ${diag.served} ${addon.kind === "subs" ? "pistas" : "fuentes"}`
+                                : "ok"}
+                            </span>
+                          )}
+                          {diag?.manifestOk && !diag.needsConfiguration && diag.served === 0 && (
+                            <span className="tag tag-off">responde pero no entrega</span>
                           )}
                         </strong>
                         <span>{addon.url}</span>
                         {diag?.error && <span className="muted">{diag.error}</span>}
+                        {diag?.manifestOk && !diag.needsConfiguration && diag.served === 0 && (
+                          <span className="muted">
+                            El manifest está bien, pero no devolvió nada para una película de prueba
+                            {diag.serveError ? ` (${diag.serveError})` : ""}. Suele ser el servidor del
+                            addon o una sesión vencida: probá de nuevo en un rato o renová el manifest.
+                          </span>
+                        )}
                       </div>
                       <div className="data-actions">
                         {diag?.configureUrl && (
@@ -1385,6 +1403,36 @@ export default function AdminPanel({ initialTab = "links" }: { initialTab?: Admi
                     Con el túnel caído, los títulos P2P no se reproducen. Se levanta solo con{" "}
                     <code>node scripts/torrent-resolver.mjs --admin {typeof window !== "undefined" ? window.location.origin : ""} --detach</code>{" "}
                     o con <code>scripts/resolver-watchdog.mjs</code> vigilándolo.
+                  </p>
+                )}
+              </div>
+            </section>
+          )}
+
+          {health?.subsync && (
+            <section className="panel" style={{ marginBottom: 18 }}>
+              <div className="panel-head">
+                <div>
+                  <h2>Sincronizador por audio</h2>
+                  <p>Mide el desfase de los subtítulos contra el audio de la película.</p>
+                </div>
+                <span className={`tag ${health.subsync.reachable ? "tag-on" : "tag-off"}`}>
+                  {health.subsync.configured
+                    ? health.subsync.reachable
+                      ? "respondiendo"
+                      : "sin respuesta"
+                    : "no configurado"}
+                </span>
+              </div>
+              <div className="panel-body">
+                {health.subsync.url && (
+                  <p className="muted" style={{ wordBreak: "break-all" }}>{health.subsync.url}</p>
+                )}
+                {!health.subsync.reachable && (
+                  <p className="muted">
+                    Sin él, los subtítulos se siguen alineando contra otra pista (el modo
+                    automático, de un segundo); solo falta la medición contra el audio. Se
+                    levanta con <code>node scripts/fubol-start.mjs</code>.
                   </p>
                 )}
               </div>

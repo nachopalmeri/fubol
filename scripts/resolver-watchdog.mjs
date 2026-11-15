@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /**
- * Vigila el resolver de torrents y lo levanta solo si se cae.
+ * Vigila el resolver de torrents y el sincronizador de subtítulos, y los
+ * levanta solos si se caen.
  *
  * El resolver corre en una máquina y se publica con un túnel sin cuenta: la
  * URL cambia cada vez que se reinicia y el proceso puede morir con la
@@ -87,6 +88,26 @@ function republish() {
   });
 }
 
+async function subsyncAlive(cookie) {
+  const res = await fetch(`${ADMIN_URL}/api/admin/subsync`, { headers: { cookie } });
+  // Un deploy viejo no tiene este endpoint: no es motivo para republicar.
+  if (res.status === 404) return true;
+  if (!res.ok) return false;
+  return (await res.json()).reachable === true;
+}
+
+function republishSubsync() {
+  return new Promise((resolve) => {
+    say("el sincronizador no responde: lo vuelvo a publicar");
+    const child = spawn(process.execPath, [path.join(ROOT, "scripts", "subsync-publish.mjs")], {
+      cwd: ROOT,
+      env: { ...process.env, FUBOL_ADMIN_PASSWORD: PASSWORD },
+      stdio: "inherit",
+    });
+    child.on("exit", (code) => resolve(code ?? 1));
+  });
+}
+
 if (!PASSWORD) {
   console.error("Falta FUBOL_ADMIN_PASSWORD con la contraseña del panel.");
   process.exit(1);
@@ -102,6 +123,8 @@ for (;;) {
     } else {
       await republish();
     }
+    // Separado del resolver: que uno esté caído no dice nada del otro.
+    if (!(await subsyncAlive(cookie))) await republishSubsync();
   } catch (error) {
     say("no pude verificar el resolver:", error instanceof Error ? error.message : "error");
   }

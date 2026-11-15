@@ -104,8 +104,9 @@ describe("P2P streams with the local streaming server", () => {
     );
   });
 
-  it("defaults to the first file when the addon omits the index", () => {
-    expect(resolveTorrentUrl("e0d00667650aba9ee05aacbbbd8b55ea8a51f534", undefined)).toMatch(/\/0$/);
+  it("lets the server pick the video when the addon omits the index", () => {
+    // -1 is what Stremio sends: index 0 is a sample or a text file in many torrents.
+    expect(resolveTorrentUrl("e0d00667650aba9ee05aacbbbd8b55ea8a51f534", undefined)).toMatch(/\/-1$/);
   });
 
   it("refuses anything that is not a 40-character info hash", () => {
