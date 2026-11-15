@@ -75,15 +75,20 @@ const [health, diagnostics, movie, episode, channels] = await Promise.all([
   get(cookie, "/api/live/channels"),
 ]);
 
-const sourcesByAddon = countBy(movie.body?.sources, (source) => source.addonName);
-const episodeByAddon = countBy(episode.body?.sources, (source) => source.addonName);
-const subsByAddon = countBy(movie.body?.subtitles, (track) => subtitleAddon(track.label));
+/** "Torrentio (P2P; requiere resolver para web)" → "Torrentio", as the app shows it. */
+const shortName = (name) => String(name ?? "").replace(/\s*\([^)]*\)\s*$/, "").trim();
+
+const sourcesByAddon = countBy(movie.body?.sources, (source) => shortName(source.addonName));
+const episodeByAddon = countBy(episode.body?.sources, (source) => shortName(source.addonName));
+// The provider comes in its own field now; older deploys put it in the label.
+const subsByAddon = countBy(movie.body?.subtitles, (track) => shortName(track.provider ?? subtitleAddon(track.label)));
 
 const rows = (diagnostics.body?.addons ?? []).map((addon) => {
   // What the title page ended up offering from this addon...
   let offered = null;
-  if (addon.kind === "vod") offered = (sourcesByAddon.get(addon.name) ?? 0) + (episodeByAddon.get(addon.name) ?? 0);
-  if (addon.kind === "subs") offered = subsByAddon.get(addon.name) ?? 0;
+  const name = shortName(addon.name);
+  if (addon.kind === "vod") offered = (sourcesByAddon.get(name) ?? 0) + (episodeByAddon.get(name) ?? 0);
+  if (addon.kind === "subs") offered = subsByAddon.get(name) ?? 0;
   // ...and what the addon itself answered when asked directly. An older
   // deploy does not report it: what was offered is then the only evidence.
   const served = typeof addon.served === "number" ? addon.served : offered;
